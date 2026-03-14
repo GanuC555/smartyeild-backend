@@ -1,12 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from '../../common/schemas/user.schema';
+import { verifyPersonalMessageSignature } from '@onelabs/sui/verify';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   // In-memory nonce store (Redis in production)
   private nonces = new Map<string, { nonce: string; expires: number }>();
 
@@ -36,8 +38,17 @@ export class AuthService {
       throw new UnauthorizedException('Nonce expired or not found');
     }
 
-    // Stub: accept any signature for hackathon
-    // Production: verify Sui Ed25519 signature against stored.nonce
+    // Verify Sui Ed25519 signature against stored nonce
+    try {
+      await verifyPersonalMessageSignature(
+        new TextEncoder().encode(stored.nonce),
+        signature,
+        { address },
+      );
+    } catch (err) {
+      this.logger.error(`Signature verification failed: ${err}`);
+      throw new UnauthorizedException('Invalid signature');
+    }
     this.nonces.delete(address.toLowerCase()); // prevent replay
 
     let user = await this.userModel.findOne({
