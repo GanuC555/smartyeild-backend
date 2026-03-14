@@ -10,6 +10,10 @@ import { AgentModule } from './modules/agent/agent.module';
 import { TransferModule } from './modules/transfer/transfer.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { LaneModule } from './modules/lane/lane.module';
+import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
+import { ProtocolModule } from './modules/protocol/protocol.module';
+import { SpendBufferModule } from './modules/spend-buffer/spend-buffer.module';
 
 @Module({
   imports: [
@@ -28,6 +32,10 @@ import { NotificationModule } from './modules/notification/notification.module';
     TransferModule,
     TelegramModule,
     NotificationModule,
+    LaneModule,
+    OrchestratorModule,
+    ProtocolModule,
+    SpendBufferModule,
   ],
 })
 export class AppModule {}
