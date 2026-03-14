@@ -7,6 +7,7 @@ import { MarketSnapshot, MarketSnapshotDocument } from '../../common/schemas/mar
 import { PendleService } from '../protocol/pendle.service';
 import { MorphoService } from '../protocol/morpho.service';
 import { StrataService } from '../protocol/strata.service';
+import { OneChainAdapterService } from '../../adapters/onechain/OneChainAdapterService';
 
 @Injectable()
 export class LaneService {
@@ -17,6 +18,7 @@ export class LaneService {
     private readonly pendle: PendleService,
     private readonly morpho: MorphoService,
     private readonly strata: StrataService,
+    private readonly oneChainAdapter: OneChainAdapterService,
   ) {}
 
   async getLaneDefinitions() {
@@ -64,8 +66,42 @@ export class LaneService {
     ];
   }
 
-  async getUserAllocation(userId: string) {
-    return this.lanePositionModel.findOne({ userId: new Types.ObjectId(userId) });
+  async getUserAllocation(userId: string, walletAddress?: string) {
+    const allocation = await this.lanePositionModel.findOne({ userId: new Types.ObjectId(userId) });
+
+    let onChainPosition: {
+      depositAmount: string;
+      seniorBps: number;
+      juniorBps: number;
+      maturityMs: number;
+      advanceAmount: string;
+      frtMinted: string;
+      ystMinted: string;
+      depositedAtMs: number;
+    } | null = null;
+
+    const addressToUse = walletAddress ?? allocation?.walletAddress;
+    if (addressToUse) {
+      try {
+        const pos = await this.oneChainAdapter.getVaultPosition(addressToUse);
+        if (pos) {
+          onChainPosition = {
+            depositAmount: pos.depositAmount.toString(),
+            seniorBps: pos.seniorBps,
+            juniorBps: pos.juniorBps,
+            maturityMs: pos.maturityMs,
+            advanceAmount: pos.advanceAmount.toString(),
+            frtMinted: pos.frtMinted.toString(),
+            ystMinted: pos.ystMinted.toString(),
+            depositedAtMs: pos.depositedAtMs,
+          };
+        }
+      } catch {
+        // on-chain read is best-effort
+      }
+    }
+
+    return { allocation, onChainPosition };
   }
 
   async setUserAllocation(userId: string, walletAddress: string, lane1Bps: number, lane2Bps: number, lane3Bps: number) {

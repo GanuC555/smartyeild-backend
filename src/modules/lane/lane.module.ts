@@ -7,6 +7,7 @@ import { Lane1Processor } from './processors/lane1.processor';
 import { Lane2Processor } from './processors/lane2.processor';
 import { Lane3Processor } from './processors/lane3.processor';
 import { ProtocolModule } from '../protocol/protocol.module';
+import { OneChainModule } from '../onechain/onechain.module';
 import { LanePosition, LanePositionSchema } from '../../common/schemas/lane-position.schema';
 import { LaneDecision, LaneDecisionSchema } from '../../common/schemas/lane-decision.schema';
 import { MarketSnapshot, MarketSnapshotSchema } from '../../common/schemas/market-snapshot.schema';
@@ -14,6 +15,7 @@ import { MarketSnapshot, MarketSnapshotSchema } from '../../common/schemas/marke
 @Module({
   imports: [
     ProtocolModule,
+    OneChainModule,
     MongooseModule.forFeature([
       { name: LanePosition.name, schema: LanePositionSchema },
       { name: LaneDecision.name, schema: LaneDecisionSchema },

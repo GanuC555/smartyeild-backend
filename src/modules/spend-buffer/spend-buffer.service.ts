@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { LanePosition, LanePositionDocument } from '../../common/schemas/lane-position.schema';
 import { SpendTransaction, SpendTransactionDocument } from '../../common/schemas/spend-transaction.schema';
 import { NotificationService } from '../notification/notification.service';
+import { OneChainAdapterService } from '../../adapters/onechain/OneChainAdapterService';
 
 @Injectable()
 export class SpendBufferService {
@@ -11,16 +12,33 @@ export class SpendBufferService {
     @InjectModel(LanePosition.name) private positionModel: Model<LanePositionDocument>,
     @InjectModel(SpendTransaction.name) private spendTxModel: Model<SpendTransactionDocument>,
     private readonly notification: NotificationService,
+    private readonly oneChainAdapter: OneChainAdapterService,
   ) {}
 
-  async getBalance(userId: string) {
+  async getBalance(userId: string, walletAddress?: string) {
     const pos = await this.positionModel.findOne({ userId: new Types.ObjectId(userId) });
     const yieldBalance = BigInt(pos?.yieldBalance || '0');
     const liquidBalance = BigInt(pos?.liquidBalance || '0');
+
+    let onChainYieldBalance = '0';
+    let onChainAdvanceBalance = '0';
+
+    if (walletAddress) {
+      try {
+        const onChain = await this.oneChainAdapter.getSpendBalance(walletAddress);
+        onChainYieldBalance = onChain.yieldBalance.toString();
+        onChainAdvanceBalance = onChain.advanceBalance.toString();
+      } catch {
+        // on-chain read is best-effort; fall back to zeros
+      }
+    }
+
     return {
       yieldBalance: yieldBalance.toString(),
       liquidBalance: liquidBalance.toString(),
       totalSpendable: (yieldBalance + liquidBalance).toString(),
+      onChainYieldBalance,
+      onChainAdvanceBalance,
     };
   }
 
@@ -73,7 +91,19 @@ export class SpendBufferService {
       message: `Paid ${amount} USDC from ${settlementSource}. Principal untouched.`,
     });
 
-    return tx;
+    // Read on-chain balance post-settlement (best-effort, frontend has already submitted the tx)
+    let onChainBalanceAfter: { yieldBalance: string; advanceBalance: string } | null = null;
+    try {
+      const onChain = await this.oneChainAdapter.getSpendBalance(walletAddress);
+      onChainBalanceAfter = {
+        yieldBalance: onChain.yieldBalance.toString(),
+        advanceBalance: onChain.advanceBalance.toString(),
+      };
+    } catch {
+      // on-chain read is best-effort
+    }
+
+    return { ...tx.toObject(), onChainBalanceAfter };
   }
 
   async creditYield(userId: string, amount: string) {
