@@ -14,6 +14,7 @@ import { LaneModule } from './modules/lane/lane.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { ProtocolModule } from './modules/protocol/protocol.module';
 import { SpendBufferModule } from './modules/spend-buffer/spend-buffer.module';
+import { OneChainModule } from './modules/onechain/onechain.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { SpendBufferModule } from './modules/spend-buffer/spend-buffer.module';
     OrchestratorModule,
     ProtocolModule,
     SpendBufferModule,
+    OneChainModule,
   ],
 })
 export class AppModule {}
