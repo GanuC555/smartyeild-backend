@@ -18,26 +18,37 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const vault_service_1 = require("./vault.service");
+const onechain_service_1 = require("../onechain/onechain.service");
 const transaction_schema_1 = require("../../common/schemas/transaction.schema");
 let TxWatcherProcessor = class TxWatcherProcessor {
-    constructor(txModel, vaultService) {
+    constructor(txModel, vaultService, oneChainService) {
         this.txModel = txModel;
         this.vaultService = vaultService;
+        this.oneChainService = oneChainService;
         this.logger = new common_1.Logger('TxWatcherProcessor');
     }
     async handleWatchTx(job) {
         const { txHash, userId, walletAddress, amount, transactionId } = job.data;
-        this.logger.log(`Watching tx: ${txHash}`);
+        this.logger.log(`[watch-tx] START txHash=${txHash} userId=${userId} wallet=${walletAddress} amount=${amount}`);
         try {
             await new Promise((r) => setTimeout(r, 2000));
-            await this.txModel.findByIdAndUpdate(transactionId, {
-                status: 'confirmed',
-            });
+            await this.txModel.findByIdAndUpdate(transactionId, { status: 'confirmed' });
+            this.logger.log(`[watch-tx] Tx marked confirmed, calling confirmDeposit...`);
             await this.vaultService.confirmDeposit(userId, walletAddress, amount, txHash);
-            this.logger.log(`Tx confirmed: ${txHash}`);
+            this.logger.log(`[watch-tx] confirmDeposit SUCCESS for ${txHash}`);
+            const depositAmt = parseFloat(amount);
+            const advanceUsd = depositAmt * 0.7;
+            this.logger.log(`[watch-tx] Calling creditAdvance on-chain: ${advanceUsd} USD → ${walletAddress}`);
+            const creditResult = await this.oneChainService.creditAdvance(walletAddress, advanceUsd);
+            if (creditResult.success) {
+                this.logger.log(`[watch-tx] creditAdvance SUCCESS digest=${creditResult.digest}`);
+            }
+            else {
+                this.logger.warn(`[watch-tx] creditAdvance on-chain FAILED (non-fatal): ${creditResult.message}`);
+            }
         }
         catch (err) {
-            this.logger.error(`Tx failed: ${txHash}`, err);
+            this.logger.error(`[watch-tx] confirmDeposit FAILED for ${txHash}:`, err);
             await this.txModel.findByIdAndUpdate(transactionId, { status: 'failed' });
             throw err;
         }
@@ -54,6 +65,7 @@ exports.TxWatcherProcessor = TxWatcherProcessor = __decorate([
     (0, bull_1.Processor)('tx-watcher'),
     __param(0, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
     __metadata("design:paramtypes", [mongoose_2.Model,
-        vault_service_1.VaultService])
+        vault_service_1.VaultService,
+        onechain_service_1.OneChainService])
 ], TxWatcherProcessor);
 //# sourceMappingURL=tx-watcher.processor.js.map

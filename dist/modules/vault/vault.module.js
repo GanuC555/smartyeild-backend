@@ -16,7 +16,9 @@ const tx_watcher_processor_1 = require("./tx-watcher.processor");
 const chain_adapter_factory_1 = require("../../adapters/chain/chain-adapter.factory");
 const position_schema_1 = require("../../common/schemas/position.schema");
 const transaction_schema_1 = require("../../common/schemas/transaction.schema");
+const lane_position_schema_1 = require("../../common/schemas/lane-position.schema");
 const auth_module_1 = require("../auth/auth.module");
+const onechain_module_1 = require("../onechain/onechain.module");
 let VaultModule = class VaultModule {
 };
 exports.VaultModule = VaultModule;
@@ -26,9 +28,11 @@ exports.VaultModule = VaultModule = __decorate([
             mongoose_1.MongooseModule.forFeature([
                 { name: position_schema_1.Position.name, schema: position_schema_1.PositionSchema },
                 { name: transaction_schema_1.Transaction.name, schema: transaction_schema_1.TransactionSchema },
+                { name: lane_position_schema_1.LanePosition.name, schema: lane_position_schema_1.LanePositionSchema },
             ]),
             bull_1.BullModule.registerQueue({ name: 'tx-watcher' }),
             auth_module_1.AuthModule,
+            onechain_module_1.OneChainModule,
         ],
         controllers: [vault_controller_1.VaultController],
         providers: [vault_service_1.VaultService, tx_watcher_processor_1.TxWatcherProcessor, chain_adapter_factory_1.ChainAdapterFactory],

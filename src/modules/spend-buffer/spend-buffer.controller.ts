@@ -9,7 +9,7 @@ export class SpendBufferController {
   @Get('balance')
   @UseGuards(JwtAuthGuard)
   getBalance(@Req() req: any) {
-    return this.spendBufferService.getBalance(req.user.sub);
+    return this.spendBufferService.getBalance(req.user.sub, req.user.address);
   }
 
   @Post('qr-pay')

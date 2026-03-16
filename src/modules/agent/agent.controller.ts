@@ -19,7 +19,7 @@ export class AgentController {
   /** Demo: manually trigger an agent run */
   @Post(':strategy/run')
   @UseGuards(JwtAuthGuard)
-  runAgent(@Param('strategy') strategy: string) {
+  runAgent(@Param('strategy') strategy: 'guardian' | 'balancer' | 'hunter') {
     return this.agentService.runAgent(strategy);
   }
 

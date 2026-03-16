@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -39,6 +39,7 @@ export class AuthService {
     }
 
     // Verify Sui Ed25519 signature against stored nonce
+    // Use 400 (not 401) so the frontend api client doesn't trigger the refresh/redirect flow
     try {
       await verifyPersonalMessageSignature(
         new TextEncoder().encode(stored.nonce),
@@ -47,7 +48,7 @@ export class AuthService {
       );
     } catch (err) {
       this.logger.error(`Signature verification failed: ${err}`);
-      throw new UnauthorizedException('Invalid signature');
+      throw new BadRequestException('Invalid signature — make sure you are signing with the correct wallet');
     }
     this.nonces.delete(address.toLowerCase()); // prevent replay
 

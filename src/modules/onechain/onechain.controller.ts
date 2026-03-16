@@ -1,4 +1,5 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Post, Param, UseGuards, Request } from '@nestjs/common';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OneChainService } from './onechain.service';
 
 @Controller('onechain')
@@ -38,5 +39,23 @@ export class OneChainController {
   async totalDeposits() {
     const total = await this.svc.getTotalDeposits();
     return { totalDeposits: total.toString() };
+  }
+
+  @Get('oct-balance/:address')
+  async octBalance(@Param('address') address: string) {
+    return this.svc.getOctBalance(address);
+  }
+
+  @Get('usd-balance/:address')
+  async usdBalance(@Param('address') address: string) {
+    return this.svc.getUsdBalance(address);
+  }
+
+  /** Mint 100 MOCK_USD to authenticated user's wallet */
+  @UseGuards(JwtAuthGuard)
+  @Post('faucet')
+  async faucet(@Request() req: any) {
+    const address: string = req.user?.walletAddress ?? req.user?.address;
+    return this.svc.mintUsd(address);
   }
 }

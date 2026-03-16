@@ -4,6 +4,7 @@ import { User } from '../../common/schemas/user.schema';
 export declare class AuthService {
     private userModel;
     private jwtService;
+    private readonly logger;
     private nonces;
     constructor(userModel: Model<User>, jwtService: JwtService);
     generateNonce(address: string): string;

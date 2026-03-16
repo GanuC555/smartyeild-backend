@@ -13,13 +13,17 @@ const bull_1 = require("@nestjs/bull");
 const agent_controller_1 = require("./agent.controller");
 const agent_service_1 = require("./agent.service");
 const demo_yield_service_1 = require("./demo-yield.service");
+const yield_credit_service_1 = require("./yield-credit.service");
 const guardian_processor_1 = require("./processors/guardian.processor");
 const balancer_processor_1 = require("./processors/balancer.processor");
 const hunter_processor_1 = require("./processors/hunter.processor");
 const agent_decision_schema_1 = require("../../common/schemas/agent-decision.schema");
 const position_schema_1 = require("../../common/schemas/position.schema");
+const lane_position_schema_1 = require("../../common/schemas/lane-position.schema");
 const auth_module_1 = require("../auth/auth.module");
 const strategy_module_1 = require("../strategy/strategy.module");
+const onechain_module_1 = require("../onechain/onechain.module");
+const telegram_module_1 = require("../telegram/telegram.module");
 let AgentModule = class AgentModule {
 };
 exports.AgentModule = AgentModule;
@@ -29,15 +33,19 @@ exports.AgentModule = AgentModule = __decorate([
             mongoose_1.MongooseModule.forFeature([
                 { name: agent_decision_schema_1.AgentDecision.name, schema: agent_decision_schema_1.AgentDecisionSchema },
                 { name: position_schema_1.Position.name, schema: position_schema_1.PositionSchema },
+                { name: lane_position_schema_1.LanePosition.name, schema: lane_position_schema_1.LanePositionSchema },
             ]),
             bull_1.BullModule.registerQueue({ name: 'guardian-agent' }, { name: 'balancer-agent' }, { name: 'hunter-agent' }),
             auth_module_1.AuthModule,
             strategy_module_1.StrategyModule,
+            onechain_module_1.OneChainModule,
+            telegram_module_1.TelegramModule,
         ],
         controllers: [agent_controller_1.AgentController],
         providers: [
             agent_service_1.AgentService,
             demo_yield_service_1.DemoYieldService,
+            yield_credit_service_1.YieldCreditService,
             guardian_processor_1.GuardianProcessor,
             balancer_processor_1.BalancerProcessor,
             hunter_processor_1.HunterProcessor,

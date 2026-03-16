@@ -19,6 +19,7 @@ const bull_1 = require("@nestjs/bull");
 const mongoose_2 = require("mongoose");
 const position_schema_1 = require("../../common/schemas/position.schema");
 const transaction_schema_1 = require("../../common/schemas/transaction.schema");
+const lane_position_schema_1 = require("../../common/schemas/lane-position.schema");
 const chain_adapter_factory_1 = require("../../adapters/chain/chain-adapter.factory");
 const VAULT = {
     id: 'vault-main',
@@ -29,11 +30,13 @@ const VAULT = {
     minDeposit: '10',
 };
 let VaultService = class VaultService {
-    constructor(positionModel, transactionModel, txWatcherQueue, chainAdapterFactory) {
+    constructor(positionModel, transactionModel, lanePositionModel, txWatcherQueue, chainAdapterFactory) {
         this.positionModel = positionModel;
         this.transactionModel = transactionModel;
+        this.lanePositionModel = lanePositionModel;
         this.txWatcherQueue = txWatcherQueue;
         this.chainAdapterFactory = chainAdapterFactory;
+        this.logger = new common_1.Logger('VaultService');
         this.chainAdapter = this.chainAdapterFactory.create();
     }
     getVaults() {
@@ -73,7 +76,10 @@ let VaultService = class VaultService {
         return { message: 'Deposit submitted, watching for confirmation', txHash };
     }
     async confirmDeposit(userId, walletAddress, amount, txHash) {
+        walletAddress = walletAddress.toLowerCase();
+        this.logger.log(`[confirmDeposit] START userId=${userId} wallet=${walletAddress} amount=${amount} txHash=${txHash}`);
         const existing = await this.positionModel.findOne({ userId, walletAddress });
+        this.logger.log(`[confirmDeposit] Position lookup: ${existing ? 'FOUND existing' : 'NOT FOUND — creating new'}`);
         const depositAmt = parseFloat(amount);
         const liquid = (depositAmt * 0.5).toFixed(6);
         const stratPool = (depositAmt * 0.5).toFixed(6);
@@ -81,20 +87,51 @@ let VaultService = class VaultService {
             existing.depositedPrincipal = (parseFloat(existing.depositedPrincipal) + depositAmt).toFixed(6);
             existing.liquidBalance = (parseFloat(existing.liquidBalance) + parseFloat(liquid)).toFixed(6);
             existing.strategyPoolBalance = (parseFloat(existing.strategyPoolBalance) + parseFloat(stratPool)).toFixed(6);
-            return existing.save();
+            await existing.save();
+            this.logger.log(`[confirmDeposit] Position updated`);
         }
-        const preview = await this.chainAdapter.previewDeposit(amount);
-        return this.positionModel.create({
-            userId,
-            vaultId: VAULT.id,
-            walletAddress,
-            shares: preview.shares,
-            depositedPrincipal: amount,
-            liquidBalance: liquid,
-            strategyPoolBalance: stratPool,
-            accruedYield: '0',
-            strategyAllocation: { guardian: 100, balancer: 0, hunter: 0 },
-        });
+        else {
+            const preview = await this.chainAdapter.previewDeposit(amount);
+            await this.positionModel.create({
+                userId,
+                vaultId: VAULT.id,
+                walletAddress,
+                shares: preview.shares,
+                depositedPrincipal: amount,
+                liquidBalance: liquid,
+                strategyPoolBalance: stratPool,
+                accruedYield: '0',
+                strategyAllocation: { guardian: 100, balancer: 0, hunter: 0 },
+            });
+            this.logger.log(`[confirmDeposit] Position created`);
+        }
+        const advance = (depositAmt * 0.7).toFixed(6);
+        this.logger.log(`[confirmDeposit] Advance to credit: ${advance} (70% of ${amount})`);
+        try {
+            const existing = await this.lanePositionModel.findOne({ userId: new mongoose_2.Types.ObjectId(userId) });
+            const advanceNum = parseFloat(advance);
+            if (existing) {
+                const currentLiquid = Number(existing.liquidBalance ?? 0);
+                await this.lanePositionModel.findByIdAndUpdate(existing._id, {
+                    $set: { walletAddress, liquidBalance: currentLiquid + advanceNum },
+                });
+                this.logger.log(`[confirmDeposit] LanePosition updated → liquidBalance=${currentLiquid + advanceNum}`);
+            }
+            else {
+                await this.lanePositionModel.create({
+                    userId,
+                    walletAddress,
+                    liquidBalance: advanceNum,
+                    yieldBalance: 0,
+                });
+                this.logger.log(`[confirmDeposit] LanePosition created → liquidBalance=${advanceNum}`);
+            }
+        }
+        catch (err) {
+            this.logger.error(`[confirmDeposit] LanePosition write FAILED:`, err);
+            throw err;
+        }
+        this.logger.log(`[confirmDeposit] DONE`);
     }
     async getUserPositions(userId) {
         return this.positionModel.find({ userId }).lean();
@@ -105,8 +142,10 @@ exports.VaultService = VaultService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(position_schema_1.Position.name)),
     __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
-    __param(2, (0, bull_1.InjectQueue)('tx-watcher')),
+    __param(2, (0, mongoose_1.InjectModel)(lane_position_schema_1.LanePosition.name)),
+    __param(3, (0, bull_1.InjectQueue)('tx-watcher')),
     __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model,
         mongoose_2.Model, Object, chain_adapter_factory_1.ChainAdapterFactory])
 ], VaultService);
 //# sourceMappingURL=vault.service.js.map

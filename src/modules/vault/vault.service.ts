@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Position } from '../../common/schemas/position.schema';
 import { Transaction } from '../../common/schemas/transaction.schema';
+import { LanePosition, LanePositionDocument } from '../../common/schemas/lane-position.schema';
 import { ChainAdapterFactory } from '../../adapters/chain/chain-adapter.factory';
 
 const VAULT = {
@@ -19,11 +20,13 @@ const VAULT = {
 
 @Injectable()
 export class VaultService {
+  private readonly logger = new Logger('VaultService');
   private chainAdapter;
 
   constructor(
     @InjectModel(Position.name) private positionModel: Model<Position>,
     @InjectModel(Transaction.name) private transactionModel: Model<Transaction>,
+    @InjectModel(LanePosition.name) private lanePositionModel: Model<LanePositionDocument>,
     @InjectQueue('tx-watcher') private txWatcherQueue: Queue,
     private chainAdapterFactory: ChainAdapterFactory,
   ) {
@@ -88,7 +91,13 @@ export class VaultService {
     amount: string,
     txHash: string,
   ) {
+    // Normalize to lowercase so address lookups are case-consistent with JWT payload
+    walletAddress = walletAddress.toLowerCase();
+    this.logger.log(`[confirmDeposit] START userId=${userId} wallet=${walletAddress} amount=${amount} txHash=${txHash}`);
+
     const existing = await this.positionModel.findOne({ userId, walletAddress });
+    this.logger.log(`[confirmDeposit] Position lookup: ${existing ? 'FOUND existing' : 'NOT FOUND — creating new'}`);
+
     const depositAmt = parseFloat(amount);
     const liquid = (depositAmt * 0.5).toFixed(6);
     const stratPool = (depositAmt * 0.5).toFixed(6);
@@ -103,21 +112,55 @@ export class VaultService {
       existing.strategyPoolBalance = (
         parseFloat(existing.strategyPoolBalance) + parseFloat(stratPool)
       ).toFixed(6);
-      return existing.save();
+      await existing.save();
+      this.logger.log(`[confirmDeposit] Position updated`);
+    } else {
+      const preview = await this.chainAdapter.previewDeposit(amount);
+      await this.positionModel.create({
+        userId,
+        vaultId: VAULT.id,
+        walletAddress,
+        shares: preview.shares,
+        depositedPrincipal: amount,
+        liquidBalance: liquid,
+        strategyPoolBalance: stratPool,
+        accruedYield: '0',
+        strategyAllocation: { guardian: 100, balancer: 0, hunter: 0 },
+      });
+      this.logger.log(`[confirmDeposit] Position created`);
     }
 
-    const preview = await this.chainAdapter.previewDeposit(amount);
-    return this.positionModel.create({
-      userId,
-      vaultId: VAULT.id,
-      walletAddress,
-      shares: preview.shares,
-      depositedPrincipal: amount,
-      liquidBalance: liquid,
-      strategyPoolBalance: stratPool,
-      accruedYield: '0',
-      strategyAllocation: { guardian: 100, balancer: 0, hunter: 0 },
-    });
+    // Advance = 70% LTV (mirrors vault::deposit on-chain calculation)
+    const advance = (depositAmt * 0.7).toFixed(6);
+    this.logger.log(`[confirmDeposit] Advance to credit: ${advance} (70% of ${amount})`);
+
+    // Upsert LanePosition by userId only — avoids duplicate docs when walletAddress wasn't set yet
+    try {
+      const existing = await this.lanePositionModel.findOne({ userId: new Types.ObjectId(userId) });
+      const advanceNum = parseFloat(advance);
+
+      if (existing) {
+        // Convert field regardless of whether it was previously stored as string or number
+        const currentLiquid = Number(existing.liquidBalance ?? 0);
+        await this.lanePositionModel.findByIdAndUpdate(existing._id, {
+          $set: { walletAddress, liquidBalance: currentLiquid + advanceNum },
+        });
+        this.logger.log(`[confirmDeposit] LanePosition updated → liquidBalance=${currentLiquid + advanceNum}`);
+      } else {
+        await this.lanePositionModel.create({
+          userId,
+          walletAddress,
+          liquidBalance: advanceNum,
+          yieldBalance: 0,
+        });
+        this.logger.log(`[confirmDeposit] LanePosition created → liquidBalance=${advanceNum}`);
+      }
+    } catch (err) {
+      this.logger.error(`[confirmDeposit] LanePosition write FAILED:`, err);
+      throw err;
+    }
+
+    this.logger.log(`[confirmDeposit] DONE`);
   }
 
   async getUserPositions(userId: string) {

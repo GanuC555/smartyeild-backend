@@ -29,6 +29,24 @@ let AgentController = class AgentController {
     runAgent(strategy) {
         return this.agentService.runAgent(strategy);
     }
+    async faucet(body) {
+        return {
+            txHash: `0xfaucet_${Date.now()}`,
+            amount: body.amount || '1000000000',
+            address: body.address,
+            message: 'Test USDC minted. Real faucet requires Sepolia deployment.',
+        };
+    }
+    async triggerLane(body, req) {
+        return {
+            queued: true,
+            lane: body.lane,
+            message: `${body.lane} decision cycle triggered`,
+        };
+    }
+    async simulateQRPay(body, req) {
+        return { simulated: true, amount: body.amount };
+    }
 };
 exports.AgentController = AgentController;
 __decorate([
@@ -52,6 +70,31 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], AgentController.prototype, "runAgent", null);
+__decorate([
+    (0, common_1.Post)('testnet/faucet'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AgentController.prototype, "faucet", null);
+__decorate([
+    (0, common_1.Post)('testnet/trigger-lane'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], AgentController.prototype, "triggerLane", null);
+__decorate([
+    (0, common_1.Post)('testnet/simulate-qr-pay'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], AgentController.prototype, "simulateQRPay", null);
 exports.AgentController = AgentController = __decorate([
     (0, common_1.Controller)('agents'),
     __metadata("design:paramtypes", [agent_service_1.AgentService])

@@ -1,15 +1,18 @@
 import { Queue } from 'bull';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Position } from '../../common/schemas/position.schema';
 import { Transaction } from '../../common/schemas/transaction.schema';
+import { LanePositionDocument } from '../../common/schemas/lane-position.schema';
 import { ChainAdapterFactory } from '../../adapters/chain/chain-adapter.factory';
 export declare class VaultService {
     private positionModel;
     private transactionModel;
+    private lanePositionModel;
     private txWatcherQueue;
     private chainAdapterFactory;
+    private readonly logger;
     private chainAdapter;
-    constructor(positionModel: Model<Position>, transactionModel: Model<Transaction>, txWatcherQueue: Queue, chainAdapterFactory: ChainAdapterFactory);
+    constructor(positionModel: Model<Position>, transactionModel: Model<Transaction>, lanePositionModel: Model<LanePositionDocument>, txWatcherQueue: Queue, chainAdapterFactory: ChainAdapterFactory);
     getVaults(): {
         apy: number;
         tvl: string;
@@ -28,13 +31,9 @@ export declare class VaultService {
         message: string;
         txHash: string;
     }>;
-    confirmDeposit(userId: string, walletAddress: string, amount: string, txHash: string): Promise<import("mongoose").Document<unknown, {}, Position, {}, {}> & Position & Required<{
-        _id: import("mongoose").Types.ObjectId;
-    }> & {
-        __v: number;
-    }>;
+    confirmDeposit(userId: string, walletAddress: string, amount: string, txHash: string): Promise<void>;
     getUserPositions(userId: string): Promise<(import("mongoose").FlattenMaps<Position> & Required<{
-        _id: import("mongoose").Types.ObjectId;
+        _id: Types.ObjectId;
     }> & {
         __v: number;
     })[]>;

@@ -23,11 +23,7 @@ export declare class VaultController {
         message: string;
         txHash: string;
     }>;
-    demoConfirm(amount: string, req: any): Promise<import("mongoose").Document<unknown, {}, import("../../common/schemas/position.schema").Position, {}, {}> & import("../../common/schemas/position.schema").Position & Required<{
-        _id: import("mongoose").Types.ObjectId;
-    }> & {
-        __v: number;
-    }>;
+    demoConfirm(amount: string, req: any): Promise<void>;
     getPositions(req: any): Promise<(import("mongoose").FlattenMaps<import("../../common/schemas/position.schema").Position> & Required<{
         _id: import("mongoose").Types.ObjectId;
     }> & {

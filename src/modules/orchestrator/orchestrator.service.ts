@@ -1,17 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import Anthropic from '@anthropic-ai/sdk';
 import { LaneDecision, LaneDecisionDocument } from '../../common/schemas/lane-decision.schema';
 import { LaneService } from '../lane/lane.service';
 import { PendleService } from '../protocol/pendle.service';
 import { MorphoService } from '../protocol/morpho.service';
 import { StrataService } from '../protocol/strata.service';
+import { LLMAdapter, NormalizedTool } from '../../common/llm/llm.adapter';
 
 @Injectable()
 export class OrchestratorService {
   private readonly logger = new Logger('OrchestratorService');
-  private readonly claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   constructor(
     @InjectModel(LaneDecision.name) private decisionModel: Model<LaneDecisionDocument>,
@@ -19,25 +18,26 @@ export class OrchestratorService {
     private readonly pendle: PendleService,
     private readonly morpho: MorphoService,
     private readonly strata: StrataService,
+    private readonly llm: LLMAdapter,
   ) {}
 
   async runAllocationDecision(userId?: string): Promise<LaneDecision> {
-    const tools: Anthropic.Tool[] = [
+    const tools: NormalizedTool[] = [
       {
         name: 'get_lane_metrics',
         description: 'Get current protocol metrics: PT discount, YT implied APY, Morpho borrow rate and utilization, srNUSD APY',
-        input_schema: { type: 'object' as const, properties: {} },
+        parameters: { type: 'object', properties: {} },
       },
       {
         name: 'get_market_snapshot',
         description: 'Get the latest stored market snapshot from the database',
-        input_schema: { type: 'object' as const, properties: {} },
+        parameters: { type: 'object', properties: {} },
       },
       {
         name: 'propose_lane_rebalance',
         description: 'Propose optimal lane allocation in basis points (must sum to 10000)',
-        input_schema: {
-          type: 'object' as const,
+        parameters: {
+          type: 'object',
           properties: {
             lane1_bps: { type: 'number', description: 'Basis points for Lane 1 (0-10000)' },
             lane2_bps: { type: 'number', description: 'Basis points for Lane 2 (0-10000)' },
@@ -67,50 +67,29 @@ Decision rules:
 
 Current date: ${new Date().toISOString()}`;
 
-    const messages: Anthropic.MessageParam[] = [
-      { role: 'user', content: 'Analyze current lane conditions and propose optimal allocation.' }
-    ];
-
-    let response = await this.claude.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      system: systemPrompt,
+    const { toolCallLog } = await this.llm.runAgentLoop(
+      systemPrompt,
+      'Analyze current lane conditions and propose optimal allocation.',
       tools,
-      messages,
-    });
+      async (name, input) => {
+        if (name === 'get_lane_metrics') return this.getLaneMetrics();
+        if (name === 'get_market_snapshot') return this.laneService.getLatestMarketSnapshot();
+        if (name === 'propose_lane_rebalance') return { status: 'proposal_recorded', ...input };
+        return {};
+      },
+    );
 
-    let proposedDecision: any = null;
-    const conversationLog: object[] = [];
-
-    while (response.stop_reason === 'tool_use') {
-      conversationLog.push({ role: 'assistant', content: response.content });
-      const toolResults = await this.handleToolCalls(response.content);
-      messages.push({ role: 'assistant', content: response.content });
-      messages.push({ role: 'user', content: toolResults });
-      conversationLog.push({ role: 'user', content: toolResults });
-
-      for (const block of response.content) {
-        if (block.type === 'tool_use' && block.name === 'propose_lane_rebalance') {
-          proposedDecision = block.input;
-        }
-      }
-
-      response = await this.claude.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2048,
-        system: systemPrompt,
-        tools,
-        messages,
-      });
-    }
+    // Extract the propose_lane_rebalance call from the log
+    const proposedDecision = toolCallLog.find((c) => c.name === 'propose_lane_rebalance')
+      ?.input as Record<string, any> | undefined;
 
     const metrics = await this.getLaneMetrics();
     const decision = await this.decisionModel.create({
       userId: userId ?? undefined,
       lane: 'orchestrator',
       trigger: proposedDecision?.trigger || 'routine',
-      model: 'claude-sonnet-4-6',
-      conversationLog: conversationLog as any,
+      model: `${this.llm.provider}/${this.llm.model}`,
+      conversationLog: toolCallLog as any,
       proposedLane1Bps: proposedDecision?.lane1_bps || 4000,
       proposedLane2Bps: proposedDecision?.lane2_bps || 4000,
       proposedLane3Bps: proposedDecision?.lane3_bps || 2000,
@@ -120,7 +99,7 @@ Current date: ${new Date().toISOString()}`;
       protocolMetrics: metrics,
     });
 
-    this.logger.log(`Orchestrator decision: ${proposedDecision?.trigger || 'routine'}`);
+    this.logger.log(`Orchestrator decision: ${proposedDecision?.trigger || 'routine'} via ${this.llm.provider}`);
     return decision;
   }
 
@@ -133,21 +112,12 @@ Current date: ${new Date().toISOString()}`;
       this.strata.getCurrentAPY(),
     ]);
     return {
-      ptDiscount, ytImpliedAPY: impliedAPY, morphoBorrowRate: borrowRate,
-      morphoUtilization: utilization, srNusdAPY, lane1Spread: ptDiscount - borrowRate,
+      ptDiscount,
+      ytImpliedAPY: impliedAPY,
+      morphoBorrowRate: borrowRate,
+      morphoUtilization: utilization,
+      srNusdAPY,
+      lane1Spread: ptDiscount - borrowRate,
     };
-  }
-
-  private async handleToolCalls(content: Anthropic.ContentBlock[]): Promise<Anthropic.ToolResultBlockParam[]> {
-    const results: Anthropic.ToolResultBlockParam[] = [];
-    for (const block of content) {
-      if (block.type !== 'tool_use') continue;
-      let result: unknown;
-      if (block.name === 'get_lane_metrics') result = await this.getLaneMetrics();
-      if (block.name === 'get_market_snapshot') result = await this.laneService.getLatestMarketSnapshot();
-      if (block.name === 'propose_lane_rebalance') result = { status: 'proposal_recorded', ...(block.input as object) };
-      results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
-    }
-    return results;
   }
 }

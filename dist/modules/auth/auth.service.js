@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
@@ -18,11 +19,13 @@ const jwt_1 = require("@nestjs/jwt");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const user_schema_1 = require("../../common/schemas/user.schema");
+const verify_1 = require("@onelabs/sui/verify");
 const crypto = require("crypto");
-let AuthService = class AuthService {
+let AuthService = AuthService_1 = class AuthService {
     constructor(userModel, jwtService) {
         this.userModel = userModel;
         this.jwtService = jwtService;
+        this.logger = new common_1.Logger(AuthService_1.name);
         this.nonces = new Map();
     }
     generateNonce(address) {
@@ -42,6 +45,13 @@ let AuthService = class AuthService {
         const stored = this.nonces.get(address.toLowerCase());
         if (!stored || stored.expires < Date.now()) {
             throw new common_1.UnauthorizedException('Nonce expired or not found');
+        }
+        try {
+            await (0, verify_1.verifyPersonalMessageSignature)(new TextEncoder().encode(stored.nonce), signature, { address });
+        }
+        catch (err) {
+            this.logger.error(`Signature verification failed: ${err}`);
+            throw new common_1.BadRequestException('Invalid signature — make sure you are signing with the correct wallet');
         }
         this.nonces.delete(address.toLowerCase());
         let user = await this.userModel.findOne({
@@ -103,7 +113,7 @@ let AuthService = class AuthService {
     }
 };
 exports.AuthService = AuthService;
-exports.AuthService = AuthService = __decorate([
+exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __metadata("design:paramtypes", [mongoose_2.Model,

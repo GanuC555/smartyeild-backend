@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bull';
+import { LLMModule } from './common/llm/llm.module';
+import { MarketSimulatorModule } from './common/market/market-simulator.module';
 import { HealthModule } from './modules/health/health.module';
 import { UserModule } from './modules/user/user.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -24,6 +26,8 @@ import { OneChainModule } from './modules/onechain/onechain.module';
     BullModule.forRoot({
       redis: process.env.REDIS_URL || 'redis://localhost:6379',
     }),
+    LLMModule,
+    MarketSimulatorModule,
     HealthModule,
     UserModule,
     AuthModule,

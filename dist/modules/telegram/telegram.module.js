@@ -10,8 +10,12 @@ exports.TelegramModule = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const telegram_service_1 = require("./telegram.service");
+const telegram_controller_1 = require("./telegram.controller");
 const user_schema_1 = require("../../common/schemas/user.schema");
 const position_schema_1 = require("../../common/schemas/position.schema");
+const agent_decision_schema_1 = require("../../common/schemas/agent-decision.schema");
+const market_simulator_module_1 = require("../../common/market/market-simulator.module");
+const llm_module_1 = require("../../common/llm/llm.module");
 let TelegramModule = class TelegramModule {
 };
 exports.TelegramModule = TelegramModule;
@@ -21,8 +25,12 @@ exports.TelegramModule = TelegramModule = __decorate([
             mongoose_1.MongooseModule.forFeature([
                 { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
                 { name: position_schema_1.Position.name, schema: position_schema_1.PositionSchema },
+                { name: agent_decision_schema_1.AgentDecision.name, schema: agent_decision_schema_1.AgentDecisionSchema },
             ]),
+            market_simulator_module_1.MarketSimulatorModule,
+            llm_module_1.LLMModule,
         ],
+        controllers: [telegram_controller_1.TelegramController],
         providers: [telegram_service_1.TelegramService],
         exports: [telegram_service_1.TelegramService],
     })

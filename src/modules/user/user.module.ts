@@ -5,6 +5,7 @@ import { UserService } from './user.service';
 import { User, UserSchema } from '../../common/schemas/user.schema';
 import { Position, PositionSchema } from '../../common/schemas/position.schema';
 import { Transaction, TransactionSchema } from '../../common/schemas/transaction.schema';
+import { LanePosition, LanePositionSchema } from '../../common/schemas/lane-position.schema';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -13,6 +14,7 @@ import { AuthModule } from '../auth/auth.module';
       { name: User.name, schema: UserSchema },
       { name: Position.name, schema: PositionSchema },
       { name: Transaction.name, schema: TransactionSchema },
+      { name: LanePosition.name, schema: LanePositionSchema },
     ]),
     AuthModule,
   ],

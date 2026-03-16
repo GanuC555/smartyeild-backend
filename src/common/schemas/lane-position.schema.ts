@@ -24,8 +24,10 @@ export class LanePosition {
   @Prop() lane3YtMaturity: Date;
   @Prop({ default: 0 }) lane3AllocationBps: number;
 
-  @Prop({ default: '0' }) yieldBalance: string;
-  @Prop({ default: '0' }) liquidBalance: string;
+  @Prop({ default: 0 }) yieldBalance: number;
+  @Prop({ default: 0 }) liquidBalance: number;
+  /** Tracks how much of Position.accruedYield has already been pushed to the spend layer */
+  @Prop({ default: 0 }) lastCreditedYield: number;
 }
 
 export const LanePositionSchema = SchemaFactory.createForClass(LanePosition);

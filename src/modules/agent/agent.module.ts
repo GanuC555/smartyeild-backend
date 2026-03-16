@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bull';
 import { AgentController } from './agent.controller';
 import { AgentService } from './agent.service';
 import { DemoYieldService } from './demo-yield.service';
+import { YieldCreditService } from './yield-credit.service';
 import { GuardianProcessor } from './processors/guardian.processor';
 import { BalancerProcessor } from './processors/balancer.processor';
 import { HunterProcessor } from './processors/hunter.processor';
@@ -12,14 +13,18 @@ import {
   AgentDecisionSchema,
 } from '../../common/schemas/agent-decision.schema';
 import { Position, PositionSchema } from '../../common/schemas/position.schema';
+import { LanePosition, LanePositionSchema } from '../../common/schemas/lane-position.schema';
 import { AuthModule } from '../auth/auth.module';
 import { StrategyModule } from '../strategy/strategy.module';
+import { OneChainModule } from '../onechain/onechain.module';
+import { TelegramModule } from '../telegram/telegram.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: AgentDecision.name, schema: AgentDecisionSchema },
       { name: Position.name, schema: PositionSchema },
+      { name: LanePosition.name, schema: LanePositionSchema },
     ]),
     BullModule.registerQueue(
       { name: 'guardian-agent' },
@@ -28,11 +33,14 @@ import { StrategyModule } from '../strategy/strategy.module';
     ),
     AuthModule,
     StrategyModule,
+    OneChainModule,
+    TelegramModule,
   ],
   controllers: [AgentController],
   providers: [
     AgentService,
     DemoYieldService,
+    YieldCreditService,
     GuardianProcessor,
     BalancerProcessor,
     HunterProcessor,

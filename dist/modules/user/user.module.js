@@ -14,6 +14,7 @@ const user_service_1 = require("./user.service");
 const user_schema_1 = require("../../common/schemas/user.schema");
 const position_schema_1 = require("../../common/schemas/position.schema");
 const transaction_schema_1 = require("../../common/schemas/transaction.schema");
+const lane_position_schema_1 = require("../../common/schemas/lane-position.schema");
 const auth_module_1 = require("../auth/auth.module");
 let UserModule = class UserModule {
 };
@@ -25,6 +26,7 @@ exports.UserModule = UserModule = __decorate([
                 { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
                 { name: position_schema_1.Position.name, schema: position_schema_1.PositionSchema },
                 { name: transaction_schema_1.Transaction.name, schema: transaction_schema_1.TransactionSchema },
+                { name: lane_position_schema_1.LanePosition.name, schema: lane_position_schema_1.LanePositionSchema },
             ]),
             auth_module_1.AuthModule,
         ],

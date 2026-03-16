@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { IStrataAdapter, StrataDepositResult } from './IStrataAdapter';
+import { MarketSimulatorService } from '../../common/market/market-simulator.service';
 
 @Injectable()
 export class MockStrataAdapterService implements IStrataAdapter {
+  constructor(private readonly market: MarketSimulatorService) {}
+
   async deposit(usdcAmount: bigint): Promise<StrataDepositResult> {
-    // 1:1 on testnet mock
     return { srNusdAmount: usdcAmount, txHash: `0xmock_strata_deposit_${Date.now()}` };
   }
 
@@ -13,10 +15,10 @@ export class MockStrataAdapterService implements IStrataAdapter {
   }
 
   async getCurrentAPY(): Promise<number> {
-    return 6.5; // mock 6.5% APY
+    return this.market.getState().srNusdAPY;
   }
 
   async getSharePrice(): Promise<bigint> {
-    return BigInt(1e18); // 1:1
+    return BigInt(1e18);
   }
 }
