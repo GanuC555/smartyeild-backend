@@ -10,11 +10,13 @@ async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     const allowedOrigins = [
         'http://localhost:3000',
+        'https://localhost:3000',
         'http://localhost:3001',
-        process.env.FRONTEND_URL,
+        'https://localhost:3001',
+        'https://smartyeild-frontend.vercel.app',
     ].filter(Boolean);
     app.enableCors({
-        origin: true,
+        origin: allowedOrigins,
         credentials: true,
     });
     app.useGlobalPipes(new common_1.ValidationPipe({ transform: true, whitelist: true }));
