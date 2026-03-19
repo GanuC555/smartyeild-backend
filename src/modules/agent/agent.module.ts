@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bull';
+import { ConfigModule } from '@nestjs/config';
 import { AgentController } from './agent.controller';
 import { AgentService } from './agent.service';
 import { DemoYieldService } from './demo-yield.service';
 import { YieldCreditService } from './yield-credit.service';
+import { YieldHarvestService } from './yield-harvest.service';
 import { GuardianProcessor } from './processors/guardian.processor';
 import { BalancerProcessor } from './processors/balancer.processor';
 import { HunterProcessor } from './processors/hunter.processor';
@@ -31,6 +33,7 @@ import { TelegramModule } from '../telegram/telegram.module';
       { name: 'balancer-agent' },
       { name: 'hunter-agent' },
     ),
+    ConfigModule,
     AuthModule,
     StrategyModule,
     OneChainModule,
@@ -41,6 +44,7 @@ import { TelegramModule } from '../telegram/telegram.module';
     AgentService,
     DemoYieldService,
     YieldCreditService,
+    YieldHarvestService,
     GuardianProcessor,
     BalancerProcessor,
     HunterProcessor,
