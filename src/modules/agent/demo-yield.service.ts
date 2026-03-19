@@ -29,9 +29,11 @@ export class DemoYieldService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    if (process.env.DEMO_MODE !== 'true') return;
-    this.logger.log('Demo yield accrual started (every 30s, market-driven APY)');
-    setInterval(() => this.accrueYield(), 30_000);
+    // Disabled: yield accrual is now driven by on-chain vault.yield_reserve via:
+    //   YieldHarvestService → simulate_trading_fees + harvest_dex_yield (every 5 min)
+    //   YieldCreditService  → reads vault.yield_reserve, calls credit_yield per user (every 5 min)
+    // DemoYieldService's simulated MongoDB writes to Position.accruedYield are no longer consumed.
+    this.logger.log('DemoYieldService: DISABLED — on-chain yield harvesting is active');
   }
 
   private async accrueYield() {
