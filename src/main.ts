@@ -10,9 +10,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const allowedOrigins = [
+    'http://localhost:3000',
     'https://localhost:3000',
     'http://localhost:3001',
-    process.env.FRONTEND_URL,
+    'https://localhost:3001',
+    'https://smartyeild-frontend.vercel.app',
   ].filter(Boolean) as string[];
 
   app.enableCors({
