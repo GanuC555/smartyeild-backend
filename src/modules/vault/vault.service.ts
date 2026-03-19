@@ -7,6 +7,7 @@ import { Position } from '../../common/schemas/position.schema';
 import { Transaction } from '../../common/schemas/transaction.schema';
 import { LanePosition, LanePositionDocument } from '../../common/schemas/lane-position.schema';
 import { ChainAdapterFactory } from '../../adapters/chain/chain-adapter.factory';
+import { OneChainAdapterService } from '../../adapters/onechain/OneChainAdapterService';
 
 const VAULT = {
   id: 'vault-main',
@@ -29,17 +30,27 @@ export class VaultService {
     @InjectModel(LanePosition.name) private lanePositionModel: Model<LanePositionDocument>,
     @InjectQueue('tx-watcher') private txWatcherQueue: Queue,
     private chainAdapterFactory: ChainAdapterFactory,
+    private readonly oneChainAdapter: OneChainAdapterService,
   ) {
     this.chainAdapter = this.chainAdapterFactory.create();
   }
 
-  getVaults() {
+  async getVaults() {
+    let tvlUsd = '0.000000';
+    try {
+      const totalDepositsRaw = await this.oneChainAdapter.getTotalDeposits();
+      // total_deposits is in MOCK_USD base units (6 decimals)
+      tvlUsd = (Number(totalDepositsRaw) / 1_000_000).toFixed(6);
+    } catch (err) {
+      this.logger.warn(`getVaults: on-chain TVL read failed — returning 0: ${err}`);
+    }
+
     return [
       {
         ...VAULT,
         apy: 12.5,
-        tvl: '485234.567891',
-        sharePrice: '1.012847',
+        tvl: tvlUsd,
+        sharePrice: '1.000000',
         status: 'active',
       },
     ];
