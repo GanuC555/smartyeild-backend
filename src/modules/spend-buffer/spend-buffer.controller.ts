@@ -14,8 +14,18 @@ export class SpendBufferController {
 
   @Post('qr-pay')
   @UseGuards(JwtAuthGuard)
-  qrPay(@Req() req: any, @Body() body: { recipientAddress: string; amount: string; note?: string }) {
-    return this.spendBufferService.settleQRPay(req.user.sub, req.user.address, body.recipientAddress, body.amount, body.note);
+  qrPay(
+    @Req() req: any,
+    @Body() body: { recipientAddress: string; amount: string; note?: string; onChainTxHash?: string },
+  ) {
+    return this.spendBufferService.settleQRPay(
+      req.user.sub,
+      req.user.address,
+      body.recipientAddress,
+      body.amount,
+      body.note,
+      body.onChainTxHash,
+    );
   }
 
   @Get('history')

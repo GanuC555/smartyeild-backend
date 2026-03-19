@@ -88,7 +88,14 @@ export class SpendBufferService {
     };
   }
 
-  async settleQRPay(userId: string, walletAddress: string, recipient: string, amount: string, note?: string) {
+  async settleQRPay(
+    userId: string,
+    walletAddress: string,
+    recipient: string,
+    amount: string,
+    note?: string,
+    onChainTxHash?: string,
+  ) {
     const pos = await this.positionModel.findOne({ userId: new Types.ObjectId(userId) });
     if (!pos) throw new BadRequestException('No position found');
 
@@ -116,6 +123,13 @@ export class SpendBufferService {
     }
     await pos.save();
 
+    if (!onChainTxHash) {
+      this.logger.warn(
+        `[settleQRPay] No onChainTxHash provided for userId=${userId} amount=${amount} — ` +
+        `settle_payment was not called on-chain. Frontend should sign spend_buffer::settle_payment and submit the digest.`,
+      );
+    }
+
     const tx = await this.spendTxModel.create({
       userId: new Types.ObjectId(userId),
       type: 'qr_pay',
@@ -125,8 +139,8 @@ export class SpendBufferService {
       settlementSource,
       yieldAmount: fromYield.toString(),
       liquidAmount: fromLiquid.toString(),
-      txHash: `0xqr_${Date.now()}`,
-      status: 'settled',
+      txHash: onChainTxHash ?? `pending_${Date.now()}`,
+      status: onChainTxHash ? 'settled' : 'pending_onchain',
       note,
     });
 
