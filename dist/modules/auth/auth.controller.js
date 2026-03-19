@@ -34,6 +34,11 @@ let AuthController = class AuthController {
     logout(refreshToken, req) {
         return this.authService.logout(refreshToken, req.user.sub);
     }
+    miniAppAuth(initData) {
+        if (!initData)
+            throw new Error('initData is required');
+        return this.authService.miniAppAuth(initData);
+    }
 };
 exports.AuthController = AuthController;
 __decorate([
@@ -66,6 +71,13 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "logout", null);
+__decorate([
+    (0, common_1.Post)('telegram-mini-app'),
+    __param(0, (0, common_1.Body)('initData')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "miniAppAuth", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService])

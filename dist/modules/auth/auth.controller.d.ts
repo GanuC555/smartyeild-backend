@@ -21,4 +21,7 @@ export declare class AuthController {
         accessToken: string;
     }>;
     logout(refreshToken: string, req: any): Promise<void>;
+    miniAppAuth(initData: string): Promise<{
+        accessToken: string;
+    }>;
 }

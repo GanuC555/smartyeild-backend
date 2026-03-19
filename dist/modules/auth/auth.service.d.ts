@@ -21,5 +21,8 @@ export declare class AuthService {
         accessToken: string;
     }>;
     logout(refreshToken: string, userId: string): Promise<void>;
+    miniAppAuth(initData: string): Promise<{
+        accessToken: string;
+    }>;
     private generatePlatformId;
 }

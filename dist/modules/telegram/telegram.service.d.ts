@@ -17,7 +17,7 @@ export declare class TelegramService implements OnModuleInit {
     constructor(userModel: Model<User>, positionModel: Model<Position>, decisionModel: Model<AgentDecision>, market: MarketSimulatorService, llm: LLMAdapter);
     onModuleInit(): Promise<void>;
     private setupHandlers;
-    private chat;
+    private chatFull;
     private buildSystemPrompt;
     private stubReply;
     private toHtml;

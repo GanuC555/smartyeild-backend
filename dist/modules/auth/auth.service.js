@@ -103,6 +103,45 @@ let AuthService = AuthService_1 = class AuthService {
             $pull: { refreshTokens: refreshToken },
         });
     }
+    async miniAppAuth(initData) {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        if (!botToken || botToken === 'your_telegram_bot_token_here') {
+            throw new common_1.BadRequestException('Telegram bot not configured');
+        }
+        const params = new URLSearchParams(initData);
+        const receivedHash = params.get('hash');
+        if (!receivedHash)
+            throw new common_1.UnauthorizedException('Missing hash in initData');
+        params.delete('hash');
+        const dataCheckString = Array.from(params.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => `${k}=${v}`)
+            .join('\n');
+        const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+        const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+        if (computedHash !== receivedHash) {
+            throw new common_1.UnauthorizedException('Invalid initData signature');
+        }
+        const authDate = parseInt(params.get('auth_date') ?? '0', 10);
+        if (Date.now() / 1000 - authDate > 3600) {
+            throw new common_1.UnauthorizedException('initData expired');
+        }
+        const userParam = params.get('user');
+        if (!userParam)
+            throw new common_1.BadRequestException('No user in initData');
+        const telegramUser = JSON.parse(userParam);
+        const telegramId = String(telegramUser.id);
+        const user = await this.userModel.findOne({ telegramId });
+        if (!user) {
+            throw new common_1.UnauthorizedException('Telegram account not linked. Send /link OYS-XXXX in the bot first.');
+        }
+        const payload = {
+            sub: user._id.toString(),
+            address: user.walletAddress,
+            platformId: user.platformId,
+        };
+        return { accessToken: this.jwtService.sign(payload, { expiresIn: '1h' }) };
+    }
     generatePlatformId() {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         let id = 'OYS-';

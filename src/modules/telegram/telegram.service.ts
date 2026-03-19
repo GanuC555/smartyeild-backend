@@ -47,8 +47,15 @@ export class TelegramService implements OnModuleInit {
       });
 
       this.setupHandlers();
+
+      // Set the persistent menu button → opens the Mini App from any chat
+      const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+      this.bot.api.raw.setChatMenuButton({
+        menu_button: { type: 'web_app', text: '📊 Open App', web_app: { url: frontendUrl } },
+      }).catch((e: any) => this.logger.warn(`Could not set menu button: ${e.message}`));
+
       this.bot.start();
-      this.logger.log(`Telegram AI chatbot started (LLM: ${this.llm.provider}/${this.llm.model})`);
+      this.logger.log(`Telegram Mini App bot started (LLM: ${this.llm.provider}/${this.llm.model})`);
     } catch (err) {
       this.logger.error('Telegram bot failed to start', err);
     }
@@ -112,6 +119,18 @@ export class TelegramService implements OnModuleInit {
       }
     });
 
+    // /app — open the Mini App directly
+    this.bot.command('app', async (ctx: any) => {
+      const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+      await ctx.reply('Open your OneYield dashboard:', {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '📊 Open App', web_app: { url: frontendUrl } },
+          ]],
+        },
+      });
+    });
+
     // /clear — reset conversation history
     this.bot.command('clear', async (ctx: any) => {
       this.history.delete(ctx.from.id.toString());
@@ -139,8 +158,24 @@ export class TelegramService implements OnModuleInit {
       await ctx.replyWithChatAction('typing');
 
       try {
-        const reply = await this.chat(telegramId, user._id.toString(), text);
-        await ctx.reply(reply, { parse_mode: 'HTML' });
+        const result = await this.chatFull(telegramId, user._id.toString(), text);
+        // Payment deep-link: send inline button instead of plain text
+        if (result.payment) {
+          const { to, amount, note } = result.payment;
+          const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+          const params = new URLSearchParams({ to, amount, ...(note ? { note } : {}) });
+          const url = `${frontendUrl}/spend?${params.toString()}`;
+          await ctx.reply(result.text, {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '💳 Open Payment', web_app: { url } },
+              ]],
+            },
+          });
+        } else {
+          await ctx.reply(result.text, { parse_mode: 'HTML' });
+        }
       } catch (err) {
         this.logger.error(`Chat error for ${telegramId}: ${err}`);
         await ctx.reply('⚠️ Something went wrong. Try again in a moment.');
@@ -150,15 +185,20 @@ export class TelegramService implements OnModuleInit {
 
   // ── Core AI chat handler ──────────────────────────────────────────────────
 
-  private async chat(telegramId: string, userId: string, userMessage: string): Promise<string> {
+  private async chatFull(
+    telegramId: string,
+    userId: string,
+    userMessage: string,
+  ): Promise<{ text: string; payment?: { to: string; amount: string; note?: string } }> {
     if (this.llm.isStub) {
-      return this.stubReply(userId, userMessage);
+      return { text: await this.stubReply(userId, userMessage) };
     }
 
     const ms  = this.market.getState();
     const pos = await this.positionModel.findOne({ userId }).lean();
 
     const systemPrompt = this.buildSystemPrompt(ms, pos);
+    try {
 
     // Tools the LLM can call
     const tools = [
@@ -181,6 +221,19 @@ export class TelegramService implements OnModuleInit {
         name: 'get_yield_projection',
         description: 'Calculate yield projections (daily, monthly, yearly) based on current APYs.',
         parameters: { type: 'object', properties: {}, required: [] },
+      },
+      {
+        name: 'initiate_payment',
+        description: 'Called when the user wants to send/pay USDC to an address. Generates a deep link to the web app spend page with the recipient and amount pre-filled so the user can sign the transaction with their own wallet.',
+        parameters: {
+          type: 'object',
+          properties: {
+            to_address: { type: 'string', description: 'The recipient wallet address' },
+            amount:     { type: 'string', description: 'The amount of USDC to send' },
+            note:       { type: 'string', description: 'Optional payment note or memo' },
+          },
+          required: ['to_address', 'amount'],
+        },
       },
     ];
 
@@ -246,6 +299,11 @@ export class TelegramService implements OnModuleInit {
         };
       }
 
+      if (name === 'initiate_payment') {
+        // Sentinel — actual deep-link button is sent after the loop
+        return { __payment: true };
+      }
+
       return {};
     };
 
@@ -261,16 +319,33 @@ export class TelegramService implements OnModuleInit {
       fullMessage = `Previous conversation:\n${historyText}\n\nUser: ${userMessage}`;
     }
 
-    const result = await this.llm.runAgentLoop(systemPrompt, fullMessage, tools, toolHandler);
+      const result = await this.llm.runAgentLoop(systemPrompt, fullMessage, tools, toolHandler);
 
-    // Update history
-    history.push({ role: 'user', content: userMessage });
-    history.push({ role: 'assistant', content: result.finalText });
-    if (history.length > MAX_HISTORY * 2) history.splice(0, 2); // drop oldest pair
-    this.history.set(telegramId, history);
+      // Update history
+      history.push({ role: 'user', content: userMessage });
+      history.push({ role: 'assistant', content: result.finalText });
+      if (history.length > MAX_HISTORY * 2) history.splice(0, 2); // drop oldest pair
+      this.history.set(telegramId, history);
 
-    // Convert markdown-style bold/italic to HTML for Telegram
-    return this.toHtml(result.finalText);
+      // Check if LLM called initiate_payment → extract details for inline button
+      const paymentCall = result.toolCallLog.find(t => t.name === 'initiate_payment');
+      if (paymentCall) {
+        const input = paymentCall.input as { to_address: string; amount: string; note?: string };
+        return {
+          text: this.toHtml(result.finalText),
+          payment: { to: input.to_address, amount: input.amount, note: input.note },
+        };
+      }
+
+      return { text: this.toHtml(result.finalText) };
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status;
+      if (status === 401 || status === 403) {
+        this.logger.warn(`LLM API key invalid (${status}) — falling back to stub replies`);
+        return { text: await this.stubReply(userId, userMessage) };
+      }
+      throw err;
+    }
   }
 
   // ── System prompt ─────────────────────────────────────────────────────────
@@ -282,7 +357,7 @@ export class TelegramService implements OnModuleInit {
       (alloc.balancer / 100) * ms.balancerAPY +
       (alloc.hunter   / 100) * ms.hunterAPY;
 
-    return `You are Ava, an AI portfolio assistant for OneYield&Spend — a DeFi yield-earning wallet on OneChain.
+    return `You are OneAI, an AI portfolio assistant for OneYield&Spend — a non-custodial DeFi yield-earning wallet on OneChain.
 You are talking to a user via Telegram. Be concise, friendly, and use emojis naturally.
 
 The user's portfolio snapshot:
@@ -296,6 +371,14 @@ Current market APYs:
 - Balancer (medium risk): ${ms.balancerAPY.toFixed(2)}%
 - Hunter (aggressive): ${ms.hunterAPY.toFixed(2)}%
 
+CRITICAL — Spending / Payment Rules (NEVER break these):
+- OneYield&Spend is 100% non-custodial. Payments ALWAYS require the user to sign with their own wallet key.
+- Spending is available on: (1) the web app at any time, (2) iOS users via OneWallet mobile app.
+- Android spending is NOT yet supported — OneWallet does not have an Android app yet.
+- If a user asks to pay, send, transfer, or spend USDC to any address → ALWAYS call the initiate_payment tool immediately. NEVER give step-by-step instructions. NEVER attempt to process the payment yourself.
+- After calling initiate_payment, respond with a short confirmation like: "💳 Tap below to open the payment in your wallet and sign the transaction."
+- If the user has not provided a recipient address or amount, ask for them before calling initiate_payment.
+
 How to respond:
 - Answer questions directly using the data above or by calling tools for fresh/detailed data
 - For portfolio, yield, agent, or market questions — ALWAYS call the relevant tool first
@@ -304,7 +387,7 @@ How to respond:
 - Use Telegram HTML formatting: <b>bold</b>, <i>italic</i>, <code>monospace</code>
 - Do NOT use markdown (no ** or __ syntax)
 - Be helpful about DeFi concepts if the user asks
-- If asked what you can do, list: check yield, portfolio, agent decisions, market rates, spending balance`;
+- If asked what you can do, list: check yield, portfolio, agent decisions, market rates, spending balance — and clarify that spending requires the web app or iOS wallet`;
   }
 
   // ── Stub reply when no LLM is configured ─────────────────────────────────

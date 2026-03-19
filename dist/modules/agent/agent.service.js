@@ -61,7 +61,14 @@ let AgentService = class AgentService {
         if (!this.llm.isStub) {
             try {
                 reasoning = await this.llm.chat(systemPrompt, userMessage);
-                decision = reasoning.toLowerCase().includes('rebalance') ? 'rebalance' : 'hold';
+                if (!reasoning?.trim()) {
+                    this.logger.warn(`[${strategyId}] LLM returned empty response — using stub reasoning`);
+                    reasoning = this.generateStubReasoning(strategyId, marketData, ms);
+                    decision = this.ruleBasedDecision(strategyId, ms);
+                }
+                else {
+                    decision = reasoning.toLowerCase().includes('rebalance') ? 'rebalance' : 'hold';
+                }
             }
             catch (err) {
                 this.logger.error(`LLM error for ${strategyId}:`, err);

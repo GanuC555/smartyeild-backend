@@ -49,8 +49,12 @@ let TelegramService = class TelegramService {
                 this.logger.error(`Bot error: ${err.message ?? err}`);
             });
             this.setupHandlers();
+            const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+            this.bot.api.raw.setChatMenuButton({
+                menu_button: { type: 'web_app', text: '📊 Open App', web_app: { url: frontendUrl } },
+            }).catch((e) => this.logger.warn(`Could not set menu button: ${e.message}`));
             this.bot.start();
-            this.logger.log(`Telegram AI chatbot started (LLM: ${this.llm.provider}/${this.llm.model})`);
+            this.logger.log(`Telegram Mini App bot started (LLM: ${this.llm.provider}/${this.llm.model})`);
         }
         catch (err) {
             this.logger.error('Telegram bot failed to start', err);
@@ -98,6 +102,16 @@ let TelegramService = class TelegramService {
                     `Get your Platform ID from <b>Settings</b> in the web app.`, { parse_mode: 'HTML' });
             }
         });
+        this.bot.command('app', async (ctx) => {
+            const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+            await ctx.reply('Open your OneYield dashboard:', {
+                reply_markup: {
+                    inline_keyboard: [[
+                            { text: '📊 Open App', web_app: { url: frontendUrl } },
+                        ]],
+                },
+            });
+        });
         this.bot.command('clear', async (ctx) => {
             this.history.delete(ctx.from.id.toString());
             await ctx.reply('🧹 Conversation cleared. Start fresh!');
@@ -114,8 +128,24 @@ let TelegramService = class TelegramService {
             }
             await ctx.replyWithChatAction('typing');
             try {
-                const reply = await this.chat(telegramId, user._id.toString(), text);
-                await ctx.reply(reply, { parse_mode: 'HTML' });
+                const result = await this.chatFull(telegramId, user._id.toString(), text);
+                if (result.payment) {
+                    const { to, amount, note } = result.payment;
+                    const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+                    const params = new URLSearchParams({ to, amount, ...(note ? { note } : {}) });
+                    const url = `${frontendUrl}/spend?${params.toString()}`;
+                    await ctx.reply(result.text, {
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [[
+                                    { text: '💳 Open Payment', web_app: { url } },
+                                ]],
+                        },
+                    });
+                }
+                else {
+                    await ctx.reply(result.text, { parse_mode: 'HTML' });
+                }
             }
             catch (err) {
                 this.logger.error(`Chat error for ${telegramId}: ${err}`);
@@ -123,115 +153,149 @@ let TelegramService = class TelegramService {
             }
         });
     }
-    async chat(telegramId, userId, userMessage) {
+    async chatFull(telegramId, userId, userMessage) {
         if (this.llm.isStub) {
-            return this.stubReply(userId, userMessage);
+            return { text: await this.stubReply(userId, userMessage) };
         }
         const ms = this.market.getState();
         const pos = await this.positionModel.findOne({ userId }).lean();
         const systemPrompt = this.buildSystemPrompt(ms, pos);
-        const tools = [
-            {
-                name: 'get_portfolio',
-                description: 'Get the user\'s full portfolio details including principal, yield, balances, and strategy allocation.',
-                parameters: { type: 'object', properties: {}, required: [] },
-            },
-            {
-                name: 'get_agent_decisions',
-                description: 'Get the latest AI agent decisions for Guardian, Balancer, and Hunter strategies.',
-                parameters: { type: 'object', properties: {}, required: [] },
-            },
-            {
-                name: 'get_market_data',
-                description: 'Get current live market APYs, utilization rates, and protocol data.',
-                parameters: { type: 'object', properties: {}, required: [] },
-            },
-            {
-                name: 'get_yield_projection',
-                description: 'Calculate yield projections (daily, monthly, yearly) based on current APYs.',
-                parameters: { type: 'object', properties: {}, required: [] },
-            },
-        ];
-        const toolHandler = async (name) => {
-            const freshMs = this.market.getState();
-            const freshPos = await this.positionModel.findOne({ userId }).lean();
-            const alloc = freshPos?.strategyAllocation || { guardian: 100, balancer: 0, hunter: 0 };
-            const blended = (alloc.guardian / 100) * freshMs.guardianAPY +
-                (alloc.balancer / 100) * freshMs.balancerAPY +
-                (alloc.hunter / 100) * freshMs.hunterAPY;
-            if (name === 'get_portfolio') {
-                return {
-                    principal: parseFloat(freshPos?.depositedPrincipal || '0'),
-                    accruedYield: parseFloat(freshPos?.accruedYield || '0'),
-                    liquidBalance: parseFloat(freshPos?.liquidBalance || '0'),
-                    strategyPool: parseFloat(freshPos?.strategyPoolBalance || '0'),
-                    allocation: alloc,
-                    blendedAPY: blended,
-                    status: freshPos?.status || 'no position',
-                };
-            }
-            if (name === 'get_agent_decisions') {
-                const decisions = {};
-                for (const id of ['guardian', 'balancer', 'hunter']) {
-                    const latest = await this.decisionModel.findOne({ strategy: id }).sort({ createdAt: -1 }).lean();
-                    decisions[id] = latest
-                        ? {
-                            decision: latest.decision,
-                            reasoning: (latest.reasoning || '').slice(0, 300),
-                            createdAt: latest.createdAt,
-                            apy: freshMs[`${id}APY`],
-                        }
-                        : { decision: 'no runs yet' };
+        try {
+            const tools = [
+                {
+                    name: 'get_portfolio',
+                    description: 'Get the user\'s full portfolio details including principal, yield, balances, and strategy allocation.',
+                    parameters: { type: 'object', properties: {}, required: [] },
+                },
+                {
+                    name: 'get_agent_decisions',
+                    description: 'Get the latest AI agent decisions for Guardian, Balancer, and Hunter strategies.',
+                    parameters: { type: 'object', properties: {}, required: [] },
+                },
+                {
+                    name: 'get_market_data',
+                    description: 'Get current live market APYs, utilization rates, and protocol data.',
+                    parameters: { type: 'object', properties: {}, required: [] },
+                },
+                {
+                    name: 'get_yield_projection',
+                    description: 'Calculate yield projections (daily, monthly, yearly) based on current APYs.',
+                    parameters: { type: 'object', properties: {}, required: [] },
+                },
+                {
+                    name: 'initiate_payment',
+                    description: 'Called when the user wants to send/pay USDC to an address. Generates a deep link to the web app spend page with the recipient and amount pre-filled so the user can sign the transaction with their own wallet.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            to_address: { type: 'string', description: 'The recipient wallet address' },
+                            amount: { type: 'string', description: 'The amount of USDC to send' },
+                            note: { type: 'string', description: 'Optional payment note or memo' },
+                        },
+                        required: ['to_address', 'amount'],
+                    },
+                },
+            ];
+            const toolHandler = async (name) => {
+                const freshMs = this.market.getState();
+                const freshPos = await this.positionModel.findOne({ userId }).lean();
+                const alloc = freshPos?.strategyAllocation || { guardian: 100, balancer: 0, hunter: 0 };
+                const blended = (alloc.guardian / 100) * freshMs.guardianAPY +
+                    (alloc.balancer / 100) * freshMs.balancerAPY +
+                    (alloc.hunter / 100) * freshMs.hunterAPY;
+                if (name === 'get_portfolio') {
+                    return {
+                        principal: parseFloat(freshPos?.depositedPrincipal || '0'),
+                        accruedYield: parseFloat(freshPos?.accruedYield || '0'),
+                        liquidBalance: parseFloat(freshPos?.liquidBalance || '0'),
+                        strategyPool: parseFloat(freshPos?.strategyPoolBalance || '0'),
+                        allocation: alloc,
+                        blendedAPY: blended,
+                        status: freshPos?.status || 'no position',
+                    };
                 }
-                return decisions;
+                if (name === 'get_agent_decisions') {
+                    const decisions = {};
+                    for (const id of ['guardian', 'balancer', 'hunter']) {
+                        const latest = await this.decisionModel.findOne({ strategy: id }).sort({ createdAt: -1 }).lean();
+                        decisions[id] = latest
+                            ? {
+                                decision: latest.decision,
+                                reasoning: (latest.reasoning || '').slice(0, 300),
+                                createdAt: latest.createdAt,
+                                apy: freshMs[`${id}APY`],
+                            }
+                            : { decision: 'no runs yet' };
+                    }
+                    return decisions;
+                }
+                if (name === 'get_market_data') {
+                    return {
+                        guardianAPY: freshMs.guardianAPY,
+                        balancerAPY: freshMs.balancerAPY,
+                        hunterAPY: freshMs.hunterAPY,
+                        srNusdAPY: freshMs.srNusdAPY,
+                        oneDexStableAPY: freshMs.oneDexStableAPY,
+                        oneDexVolatileAPY: freshMs.oneDexVolatileAPY,
+                        morphoUtilization: freshMs.morphoUtilization,
+                        lane1Spread: freshMs.lane1Spread,
+                        openMarkets: freshMs.openMarkets,
+                        highConfMarkets: freshMs.highConfMarkets,
+                    };
+                }
+                if (name === 'get_yield_projection') {
+                    const principal = parseFloat(freshPos?.depositedPrincipal || '0');
+                    return {
+                        dailyUSD: (principal * blended / 100) / 365,
+                        monthlyUSD: (principal * blended / 100) / 12,
+                        yearlyUSD: principal * blended / 100,
+                        blendedAPY: blended,
+                    };
+                }
+                if (name === 'initiate_payment') {
+                    return { __payment: true };
+                }
+                return {};
+            };
+            const history = this.history.get(telegramId) ?? [];
+            let fullMessage = userMessage;
+            if (history.length > 0) {
+                const historyText = history
+                    .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+                    .join('\n');
+                fullMessage = `Previous conversation:\n${historyText}\n\nUser: ${userMessage}`;
             }
-            if (name === 'get_market_data') {
+            const result = await this.llm.runAgentLoop(systemPrompt, fullMessage, tools, toolHandler);
+            history.push({ role: 'user', content: userMessage });
+            history.push({ role: 'assistant', content: result.finalText });
+            if (history.length > MAX_HISTORY * 2)
+                history.splice(0, 2);
+            this.history.set(telegramId, history);
+            const paymentCall = result.toolCallLog.find(t => t.name === 'initiate_payment');
+            if (paymentCall) {
+                const input = paymentCall.input;
                 return {
-                    guardianAPY: freshMs.guardianAPY,
-                    balancerAPY: freshMs.balancerAPY,
-                    hunterAPY: freshMs.hunterAPY,
-                    srNusdAPY: freshMs.srNusdAPY,
-                    oneDexStableAPY: freshMs.oneDexStableAPY,
-                    oneDexVolatileAPY: freshMs.oneDexVolatileAPY,
-                    morphoUtilization: freshMs.morphoUtilization,
-                    lane1Spread: freshMs.lane1Spread,
-                    openMarkets: freshMs.openMarkets,
-                    highConfMarkets: freshMs.highConfMarkets,
+                    text: this.toHtml(result.finalText),
+                    payment: { to: input.to_address, amount: input.amount, note: input.note },
                 };
             }
-            if (name === 'get_yield_projection') {
-                const principal = parseFloat(freshPos?.depositedPrincipal || '0');
-                return {
-                    dailyUSD: (principal * blended / 100) / 365,
-                    monthlyUSD: (principal * blended / 100) / 12,
-                    yearlyUSD: principal * blended / 100,
-                    blendedAPY: blended,
-                };
-            }
-            return {};
-        };
-        const history = this.history.get(telegramId) ?? [];
-        let fullMessage = userMessage;
-        if (history.length > 0) {
-            const historyText = history
-                .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-                .join('\n');
-            fullMessage = `Previous conversation:\n${historyText}\n\nUser: ${userMessage}`;
+            return { text: this.toHtml(result.finalText) };
         }
-        const result = await this.llm.runAgentLoop(systemPrompt, fullMessage, tools, toolHandler);
-        history.push({ role: 'user', content: userMessage });
-        history.push({ role: 'assistant', content: result.finalText });
-        if (history.length > MAX_HISTORY * 2)
-            history.splice(0, 2);
-        this.history.set(telegramId, history);
-        return this.toHtml(result.finalText);
+        catch (err) {
+            const status = err?.status ?? err?.response?.status;
+            if (status === 401 || status === 403) {
+                this.logger.warn(`LLM API key invalid (${status}) — falling back to stub replies`);
+                return { text: await this.stubReply(userId, userMessage) };
+            }
+            throw err;
+        }
     }
     buildSystemPrompt(ms, pos) {
         const alloc = pos?.strategyAllocation || { guardian: 100, balancer: 0, hunter: 0 };
         const blended = (alloc.guardian / 100) * ms.guardianAPY +
             (alloc.balancer / 100) * ms.balancerAPY +
             (alloc.hunter / 100) * ms.hunterAPY;
-        return `You are Ava, an AI portfolio assistant for OneYield&Spend — a DeFi yield-earning wallet on OneChain.
+        return `You are OneAI, an AI portfolio assistant for OneYield&Spend — a non-custodial DeFi yield-earning wallet on OneChain.
 You are talking to a user via Telegram. Be concise, friendly, and use emojis naturally.
 
 The user's portfolio snapshot:
@@ -245,6 +309,14 @@ Current market APYs:
 - Balancer (medium risk): ${ms.balancerAPY.toFixed(2)}%
 - Hunter (aggressive): ${ms.hunterAPY.toFixed(2)}%
 
+CRITICAL — Spending / Payment Rules (NEVER break these):
+- OneYield&Spend is 100% non-custodial. Payments ALWAYS require the user to sign with their own wallet key.
+- Spending is available on: (1) the web app at any time, (2) iOS users via OneWallet mobile app.
+- Android spending is NOT yet supported — OneWallet does not have an Android app yet.
+- If a user asks to pay, send, transfer, or spend USDC to any address → ALWAYS call the initiate_payment tool immediately. NEVER give step-by-step instructions. NEVER attempt to process the payment yourself.
+- After calling initiate_payment, respond with a short confirmation like: "💳 Tap below to open the payment in your wallet and sign the transaction."
+- If the user has not provided a recipient address or amount, ask for them before calling initiate_payment.
+
 How to respond:
 - Answer questions directly using the data above or by calling tools for fresh/detailed data
 - For portfolio, yield, agent, or market questions — ALWAYS call the relevant tool first
@@ -253,7 +325,7 @@ How to respond:
 - Use Telegram HTML formatting: <b>bold</b>, <i>italic</i>, <code>monospace</code>
 - Do NOT use markdown (no ** or __ syntax)
 - Be helpful about DeFi concepts if the user asks
-- If asked what you can do, list: check yield, portfolio, agent decisions, market rates, spending balance`;
+- If asked what you can do, list: check yield, portfolio, agent decisions, market rates, spending balance — and clarify that spending requires the web app or iOS wallet`;
     }
     async stubReply(userId, message) {
         const pos = await this.positionModel.findOne({ userId }).lean();

@@ -34,4 +34,11 @@ export class AuthController {
   logout(@Body('refreshToken') refreshToken: string, @Req() req: any) {
     return this.authService.logout(refreshToken, req.user.sub);
   }
+
+  /** POST /auth/telegram-mini-app — silent auth for Telegram Mini App WebView */
+  @Post('telegram-mini-app')
+  miniAppAuth(@Body('initData') initData: string) {
+    if (!initData) throw new Error('initData is required');
+    return this.authService.miniAppAuth(initData);
+  }
 }
