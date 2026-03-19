@@ -2,7 +2,7 @@ import { VaultService } from './vault.service';
 export declare class VaultController {
     private vaultService;
     constructor(vaultService: VaultService);
-    getVaults(): {
+    getVaults(): Promise<{
         apy: number;
         tvl: string;
         sharePrice: string;
@@ -12,7 +12,7 @@ export declare class VaultController {
         chainId: string;
         contractAddress: string;
         minDeposit: string;
-    }[];
+    }[]>;
     getVault(id: string): Promise<any>;
     previewDeposit(amount: string): Promise<any>;
     previewWithdraw(shares: string): Promise<any>;

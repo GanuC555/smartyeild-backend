@@ -37,12 +37,12 @@ let UserService = class UserService {
         const positions = await this.positionModel.find({ userId }).lean();
         const lanePos = await this.lanePositionModel.findOne({ userId: new mongoose_2.Types.ObjectId(userId) }).lean();
         const totalPrincipal = positions.reduce((s, p) => s + parseFloat(p.depositedPrincipal || '0'), 0);
-        const totalYield = positions.reduce((s, p) => s + parseFloat(p.accruedYield || '0'), 0);
-        const twoPoolLiquid = positions.reduce((s, p) => s + parseFloat(p.liquidBalance || '0'), 0);
-        const strategyPool = positions.reduce((s, p) => s + parseFloat(p.strategyPoolBalance || '0'), 0);
         const laneYield = Number(lanePos?.yieldBalance ?? 0);
         const laneAdvance = Number(lanePos?.liquidBalance ?? 0);
         const availableToSpend = laneYield + laneAdvance;
+        const totalYield = laneYield;
+        const advanceCredit = laneAdvance;
+        const lockedSurplus = Math.max(0, totalPrincipal - laneAdvance);
         const alloc = positions[0]?.strategyAllocation ?? {
             guardian: 100,
             balancer: 0,
@@ -63,8 +63,8 @@ let UserService = class UserService {
         return {
             totalPrincipal: totalPrincipal.toFixed(6),
             totalYield: totalYield.toFixed(6),
-            liquidBalance: twoPoolLiquid.toFixed(6),
-            strategyPool: strategyPool.toFixed(6),
+            liquidBalance: advanceCredit.toFixed(6),
+            strategyPool: lockedSurplus.toFixed(6),
             totalValue: (totalPrincipal + totalYield).toFixed(6),
             availableToSpend: availableToSpend.toFixed(6),
             blendedAPY: effectiveAPY.toFixed(2),

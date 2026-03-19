@@ -10,10 +10,12 @@ exports.AgentModule = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const bull_1 = require("@nestjs/bull");
+const config_1 = require("@nestjs/config");
 const agent_controller_1 = require("./agent.controller");
 const agent_service_1 = require("./agent.service");
 const demo_yield_service_1 = require("./demo-yield.service");
 const yield_credit_service_1 = require("./yield-credit.service");
+const yield_harvest_service_1 = require("./yield-harvest.service");
 const guardian_processor_1 = require("./processors/guardian.processor");
 const balancer_processor_1 = require("./processors/balancer.processor");
 const hunter_processor_1 = require("./processors/hunter.processor");
@@ -36,6 +38,7 @@ exports.AgentModule = AgentModule = __decorate([
                 { name: lane_position_schema_1.LanePosition.name, schema: lane_position_schema_1.LanePositionSchema },
             ]),
             bull_1.BullModule.registerQueue({ name: 'guardian-agent' }, { name: 'balancer-agent' }, { name: 'hunter-agent' }),
+            config_1.ConfigModule,
             auth_module_1.AuthModule,
             strategy_module_1.StrategyModule,
             onechain_module_1.OneChainModule,
@@ -46,6 +49,7 @@ exports.AgentModule = AgentModule = __decorate([
             agent_service_1.AgentService,
             demo_yield_service_1.DemoYieldService,
             yield_credit_service_1.YieldCreditService,
+            yield_harvest_service_1.YieldHarvestService,
             guardian_processor_1.GuardianProcessor,
             balancer_processor_1.BalancerProcessor,
             hunter_processor_1.HunterProcessor,

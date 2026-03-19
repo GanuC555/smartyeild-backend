@@ -26,10 +26,7 @@ let DemoYieldService = class DemoYieldService {
         this.logger = new common_1.Logger('DemoYieldService');
     }
     onModuleInit() {
-        if (process.env.DEMO_MODE !== 'true')
-            return;
-        this.logger.log('Demo yield accrual started (every 30s, market-driven APY)');
-        setInterval(() => this.accrueYield(), 30_000);
+        this.logger.log('DemoYieldService: DISABLED — on-chain yield harvesting is active');
     }
     async accrueYield() {
         const ms = this.market.getState();

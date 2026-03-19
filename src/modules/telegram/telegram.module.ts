@@ -5,6 +5,7 @@ import { TelegramController } from './telegram.controller';
 import { User, UserSchema } from '../../common/schemas/user.schema';
 import { Position, PositionSchema } from '../../common/schemas/position.schema';
 import { AgentDecision, AgentDecisionSchema } from '../../common/schemas/agent-decision.schema';
+import { LanePosition, LanePositionSchema } from '../../common/schemas/lane-position.schema';
 import { MarketSimulatorModule } from '../../common/market/market-simulator.module';
 import { LLMModule } from '../../common/llm/llm.module';
 
@@ -14,6 +15,7 @@ import { LLMModule } from '../../common/llm/llm.module';
       { name: User.name, schema: UserSchema },
       { name: Position.name, schema: PositionSchema },
       { name: AgentDecision.name, schema: AgentDecisionSchema },
+      { name: LanePosition.name, schema: LanePositionSchema },
     ]),
     MarketSimulatorModule,
     LLMModule,

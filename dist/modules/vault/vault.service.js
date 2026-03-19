@@ -21,6 +21,7 @@ const position_schema_1 = require("../../common/schemas/position.schema");
 const transaction_schema_1 = require("../../common/schemas/transaction.schema");
 const lane_position_schema_1 = require("../../common/schemas/lane-position.schema");
 const chain_adapter_factory_1 = require("../../adapters/chain/chain-adapter.factory");
+const OneChainAdapterService_1 = require("../../adapters/onechain/OneChainAdapterService");
 const VAULT = {
     id: 'vault-main',
     name: 'OneYield Vault',
@@ -30,22 +31,31 @@ const VAULT = {
     minDeposit: '10',
 };
 let VaultService = class VaultService {
-    constructor(positionModel, transactionModel, lanePositionModel, txWatcherQueue, chainAdapterFactory) {
+    constructor(positionModel, transactionModel, lanePositionModel, txWatcherQueue, chainAdapterFactory, oneChainAdapter) {
         this.positionModel = positionModel;
         this.transactionModel = transactionModel;
         this.lanePositionModel = lanePositionModel;
         this.txWatcherQueue = txWatcherQueue;
         this.chainAdapterFactory = chainAdapterFactory;
+        this.oneChainAdapter = oneChainAdapter;
         this.logger = new common_1.Logger('VaultService');
         this.chainAdapter = this.chainAdapterFactory.create();
     }
-    getVaults() {
+    async getVaults() {
+        let tvlUsd = '0.000000';
+        try {
+            const totalDepositsRaw = await this.oneChainAdapter.getTotalDeposits();
+            tvlUsd = (Number(totalDepositsRaw) / 1_000_000).toFixed(6);
+        }
+        catch (err) {
+            this.logger.warn(`getVaults: on-chain TVL read failed — returning 0: ${err}`);
+        }
         return [
             {
                 ...VAULT,
                 apy: 12.5,
-                tvl: '485234.567891',
-                sharePrice: '1.012847',
+                tvl: tvlUsd,
+                sharePrice: '1.000000',
                 status: 'active',
             },
         ];
@@ -146,6 +156,7 @@ exports.VaultService = VaultService = __decorate([
     __param(3, (0, bull_1.InjectQueue)('tx-watcher')),
     __metadata("design:paramtypes", [mongoose_2.Model,
         mongoose_2.Model,
-        mongoose_2.Model, Object, chain_adapter_factory_1.ChainAdapterFactory])
+        mongoose_2.Model, Object, chain_adapter_factory_1.ChainAdapterFactory,
+        OneChainAdapterService_1.OneChainAdapterService])
 ], VaultService);
 //# sourceMappingURL=vault.service.js.map

@@ -1,9 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User } from '../../common/schemas/user.schema';
 import { Position } from '../../common/schemas/position.schema';
 import { AgentDecision } from '../../common/schemas/agent-decision.schema';
+import { LanePosition } from '../../common/schemas/lane-position.schema';
 import { MarketSimulatorService } from '../../common/market/market-simulator.service';
 import { LLMAdapter } from '../../common/llm/llm.adapter';
 
@@ -28,6 +29,7 @@ export class TelegramService implements OnModuleInit {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Position.name) private positionModel: Model<Position>,
     @InjectModel(AgentDecision.name) private decisionModel: Model<AgentDecision>,
+    @InjectModel(LanePosition.name) private lanePositionModel: Model<LanePosition>,
     private readonly market: MarketSimulatorService,
     private readonly llm: LLMAdapter,
   ) {}
@@ -196,8 +198,9 @@ export class TelegramService implements OnModuleInit {
 
     const ms  = this.market.getState();
     const pos = await this.positionModel.findOne({ userId }).lean();
+    const lanePos = await this.lanePositionModel.findOne({ userId: new Types.ObjectId(userId) }).lean() as any;
 
-    const systemPrompt = this.buildSystemPrompt(ms, pos);
+    const systemPrompt = this.buildSystemPrompt(ms, pos, lanePos);
     try {
 
     // Tools the LLM can call
@@ -238,23 +241,24 @@ export class TelegramService implements OnModuleInit {
     ];
 
     const toolHandler = async (name: string): Promise<unknown> => {
-      const freshMs  = this.market.getState();
-      const freshPos = await this.positionModel.findOne({ userId }).lean() as any;
-      const alloc    = freshPos?.strategyAllocation || { guardian: 100, balancer: 0, hunter: 0 };
-      const blended  =
+      const freshMs   = this.market.getState();
+      const freshPos  = await this.positionModel.findOne({ userId }).lean() as any;
+      const freshLane = await this.lanePositionModel.findOne({ userId: new Types.ObjectId(userId) }).lean() as any;
+      const alloc     = freshPos?.strategyAllocation || { guardian: 100, balancer: 0, hunter: 0 };
+      const blended   =
         (alloc.guardian / 100) * freshMs.guardianAPY +
         (alloc.balancer / 100) * freshMs.balancerAPY +
         (alloc.hunter   / 100) * freshMs.hunterAPY;
 
       if (name === 'get_portfolio') {
         return {
-          principal:     parseFloat(freshPos?.depositedPrincipal || '0'),
-          accruedYield:  parseFloat(freshPos?.accruedYield || '0'),
-          liquidBalance: parseFloat(freshPos?.liquidBalance || '0'),
-          strategyPool:  parseFloat(freshPos?.strategyPoolBalance || '0'),
-          allocation:    alloc,
-          blendedAPY:    blended,
-          status:        freshPos?.status || 'no position',
+          principal:      parseFloat(freshPos?.depositedPrincipal || '0'),
+          yieldEarned:    Number(freshLane?.yieldBalance ?? 0),   // real on-chain yield (LanePosition)
+          advanceCredit:  Number(freshLane?.liquidBalance ?? 0),  // real advance (LanePosition)
+          availableToSpend: Number(freshLane?.yieldBalance ?? 0) + Number(freshLane?.liquidBalance ?? 0),
+          allocation:     alloc,
+          blendedAPY:     blended,
+          status:         freshPos?.status || 'no position',
         };
       }
 
@@ -350,20 +354,24 @@ export class TelegramService implements OnModuleInit {
 
   // ── System prompt ─────────────────────────────────────────────────────────
 
-  private buildSystemPrompt(ms: any, pos: any): string {
+  private buildSystemPrompt(ms: any, pos: any, lanePos?: any): string {
     const alloc = pos?.strategyAllocation || { guardian: 100, balancer: 0, hunter: 0 };
     const blended =
       (alloc.guardian / 100) * ms.guardianAPY +
       (alloc.balancer / 100) * ms.balancerAPY +
       (alloc.hunter   / 100) * ms.hunterAPY;
+    const yieldEarned    = Number(lanePos?.yieldBalance ?? 0);
+    const advanceCredit  = Number(lanePos?.liquidBalance ?? 0);
+    const availableToSpend = yieldEarned + advanceCredit;
 
     return `You are OneAI, an AI portfolio assistant for OneYield&Spend — a non-custodial DeFi yield-earning wallet on OneChain.
 You are talking to a user via Telegram. Be concise, friendly, and use emojis naturally.
 
 The user's portfolio snapshot:
 - Principal deposited: $${parseFloat(pos?.depositedPrincipal || '0').toFixed(2)} USDC
-- Accrued yield: $${parseFloat(pos?.accruedYield || '0').toFixed(6)} USDC
-- Liquid (spendable): $${parseFloat(pos?.liquidBalance || '0').toFixed(2)} USDC
+- Yield earned (on-chain): $${yieldEarned.toFixed(6)} USDC
+- Advance credit (70% LTV): $${advanceCredit.toFixed(2)} USDC
+- Total available to spend: $${availableToSpend.toFixed(2)} USDC
 - Blended APY: ${blended.toFixed(2)}%
 
 Current market APYs:
@@ -393,24 +401,25 @@ How to respond:
   // ── Stub reply when no LLM is configured ─────────────────────────────────
 
   private async stubReply(userId: string, message: string): Promise<string> {
-    const pos = await this.positionModel.findOne({ userId }).lean() as any;
-    const ms  = this.market.getState();
-    const lower = message.toLowerCase();
+    const pos     = await this.positionModel.findOne({ userId }).lean() as any;
+    const lanePos = await this.lanePositionModel.findOne({ userId: new Types.ObjectId(userId) }).lean() as any;
+    const ms      = this.market.getState();
+    const lower   = message.toLowerCase();
+    const yieldEarned   = Number(lanePos?.yieldBalance ?? 0);
+    const advanceCredit = Number(lanePos?.liquidBalance ?? 0);
 
     if (lower.includes('yield') || lower.includes('earn')) {
-      const accrued = parseFloat(pos?.accruedYield || '0');
-      return `📈 You've earned <code>$${h(accrued.toFixed(6))}</code> USDC so far.\nCurrent blended APY: ~${h(ms.guardianAPY.toFixed(2))}%`;
+      return `📈 You've earned <code>$${h(yieldEarned.toFixed(6))}</code> USDC so far.\nCurrent blended APY: ~${h(ms.guardianAPY.toFixed(2))}%`;
     }
     if (lower.includes('balance') || lower.includes('spend') || lower.includes('liquid')) {
-      const liquid = parseFloat(pos?.liquidBalance || '0');
-      return `💧 Available to spend: <code>$${h(liquid.toFixed(2))}</code> USDC`;
+      return `💧 Available to spend: <code>$${h((yieldEarned + advanceCredit).toFixed(2))}</code> USDC (yield: $${h(yieldEarned.toFixed(4))} + advance: $${h(advanceCredit.toFixed(2))})`;
     }
     if (lower.includes('agent') || lower.includes('guardian') || lower.includes('balancer') || lower.includes('hunter')) {
       return `🤖 Agent APYs right now:\n🛡️ Guardian: ${h(ms.guardianAPY.toFixed(2))}%\n⚖️ Balancer: ${h(ms.balancerAPY.toFixed(2))}%\n🎯 Hunter: ${h(ms.hunterAPY.toFixed(2))}%`;
     }
     if (lower.includes('portfolio') || lower.includes('position')) {
       const principal = parseFloat(pos?.depositedPrincipal || '0');
-      return `📊 Principal: <code>$${h(principal.toFixed(2))}</code>\nYield: <code>$${h(parseFloat(pos?.accruedYield || '0').toFixed(6))}</code>`;
+      return `📊 Principal: <code>$${h(principal.toFixed(2))}</code>\nYield earned: <code>$${h(yieldEarned.toFixed(6))}</code>\nAvailable to spend: <code>$${h((yieldEarned + advanceCredit).toFixed(2))}</code>`;
     }
 
     return `👋 I can answer questions about your yield, portfolio, agent decisions, and spending balance. What would you like to know?`;

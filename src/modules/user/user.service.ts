@@ -28,31 +28,28 @@ export class UserService {
     const positions = await this.positionModel.find({ userId }).lean();
     const lanePos = await this.lanePositionModel.findOne({ userId: new Types.ObjectId(userId) }).lean();
 
-    // ── Position-level aggregates (two-pool architecture) ─────────────────
+    // ── Position-level aggregates ─────────────────────────────────────────
     const totalPrincipal = positions.reduce(
       (s, p) => s + parseFloat(p.depositedPrincipal || '0'),
       0,
     );
-    const totalYield = positions.reduce(
-      (s, p) => s + parseFloat(p.accruedYield || '0'),
-      0,
-    );
-    // liquidBalance & strategyPool here represent the two-pool split (50/50)
-    const twoPoolLiquid = positions.reduce(
-      (s, p) => s + parseFloat(p.liquidBalance || '0'),
-      0,
-    );
-    const strategyPool = positions.reduce(
-      (s, p) => s + parseFloat(p.strategyPoolBalance || '0'),
-      0,
-    );
 
-    // ── LanePosition: actual spendable advance (70% LTV) ─────────────────
-    // yieldBalance = yield credited to spend layer
-    // liquidBalance = advance credit (70% of deposit)
+    // ── LanePosition: live on-chain mirrors ──────────────────────────────
+    // yieldBalance = real yield credited on-chain every 5 min (YieldCreditService)
+    // liquidBalance = advance credit (70% of deposit, issued at deposit time)
     const laneYield = Number(lanePos?.yieldBalance ?? 0);
     const laneAdvance = Number(lanePos?.liquidBalance ?? 0);
     const availableToSpend = laneYield + laneAdvance;
+
+    // totalYield: read from LanePosition.yieldBalance (live on-chain source).
+    // Position.accruedYield is no longer updated — DemoYieldService is disabled.
+    const totalYield = laneYield;
+
+    // TwoPool visual breakdown: advance credit vs locked surplus (adds up to principal)
+    // advanceCredit = how much of principal is accessible as spending advance today
+    // lockedSurplus = principal - advance (returned at maturity, beyond advance reach)
+    const advanceCredit = laneAdvance;
+    const lockedSurplus = Math.max(0, totalPrincipal - laneAdvance);
 
     // ── Blended APY from allocation of first position ─────────────────────
     const alloc = positions[0]?.strategyAllocation ?? {
@@ -84,11 +81,10 @@ export class UserService {
     return {
       totalPrincipal: totalPrincipal.toFixed(6),
       totalYield: totalYield.toFixed(6),
-      // two-pool breakdown shown in TwoPoolVisual
-      liquidBalance: twoPoolLiquid.toFixed(6),
-      strategyPool: strategyPool.toFixed(6),
+      // TwoPool breakdown: advance credit vs locked surplus (both from LanePosition/principal)
+      liquidBalance: advanceCredit.toFixed(6),   // advance credit — what user can spend today
+      strategyPool: lockedSurplus.toFixed(6),    // locked surplus — returns at maturity
       totalValue: (totalPrincipal + totalYield).toFixed(6),
-      // availableToSpend = real spend advance (LanePosition), NOT two-pool liquid
       availableToSpend: availableToSpend.toFixed(6),
       blendedAPY: effectiveAPY.toFixed(2),
       dailyEarnRate: dailyRate.toFixed(8),
