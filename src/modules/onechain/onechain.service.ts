@@ -38,6 +38,18 @@ export class OneChainService {
     return this.adapter.getPackageId();
   }
 
+  async getVaultYieldReserve(): Promise<bigint> {
+    return this.adapter.getVaultYieldReserve();
+  }
+
+  async getUserYstBalance(userAddress: string): Promise<bigint> {
+    return this.adapter.getUserYstBalance(userAddress);
+  }
+
+  async getAdminDexLpShares(): Promise<bigint> {
+    return this.adapter.getAdminDexLpShares();
+  }
+
   /** Get OCT coin balance for an address (for gas display) */
   async getOctBalance(address: string): Promise<{ balance: string; balanceOct: string }> {
     try {

@@ -43,4 +43,16 @@ export interface IOneChainAdapter {
 
   /** Get package ID of deployed oneyield package */
   getPackageId(): string;
+
+  /** Total MOCK_USD currently in vault.yield_reserve (base units, 6 decimals) */
+  getVaultYieldReserve(): Promise<bigint>;
+
+  /** Total YST balance for a user across all their YST coin objects (base units) */
+  getUserYstBalance(userAddress: string): Promise<bigint>;
+
+  /**
+   * LP share count for the admin address in the OneDex pool.
+   * Returns 0n if admin has no position yet.
+   */
+  getAdminDexLpShares(): Promise<bigint>;
 }

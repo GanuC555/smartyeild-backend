@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SuiClient, getFullnodeUrl } from '@onelabs/sui/client';
+import { Ed25519Keypair } from '@onelabs/sui/keypairs/ed25519';
 import {
   IOneChainAdapter,
   SpendBalance,
@@ -14,6 +15,7 @@ export class OneChainAdapterService implements IOneChainAdapter, OnModuleInit {
   private packageId: string;
   private vaultObjectId: string;
   private spendBufferObjectId: string;
+  private onedexObjectId: string;
 
   constructor(private config: ConfigService) {}
 
@@ -25,6 +27,8 @@ export class OneChainAdapterService implements IOneChainAdapter, OnModuleInit {
     this.vaultObjectId = this.config.get<string>('ONECHAIN_VAULT_OBJECT_ID') ?? '';
     this.spendBufferObjectId =
       this.config.get<string>('ONECHAIN_SPEND_BUFFER_OBJECT_ID') ?? '';
+    this.onedexObjectId =
+      this.config.get<string>('ONECHAIN_ONEDEX_OBJECT_ID') ?? '';
 
     this.client = new SuiClient({ url: rpcUrl });
     this.logger.log(`OneChainAdapter initialised — RPC: ${rpcUrl}`);
@@ -121,6 +125,64 @@ export class OneChainAdapterService implements IOneChainAdapter, OnModuleInit {
       const fields = (obj.data?.content as any)?.fields;
       return BigInt(fields?.total_deposits ?? 0);
     } catch {
+      return 0n;
+    }
+  }
+
+  async getVaultYieldReserve(): Promise<bigint> {
+    if (!this.vaultObjectId) return 0n;
+    try {
+      const obj = await this.client.getObject({
+        id: this.vaultObjectId,
+        options: { showContent: true },
+      });
+      const fields = (obj.data?.content as any)?.fields;
+      // yield_reserve is a Balance<MOCK_USD> stored as { fields: { value: "..." } }
+      const raw = fields?.yield_reserve?.fields?.value ?? '0';
+      return BigInt(raw);
+    } catch (err) {
+      this.logger.warn(`getVaultYieldReserve failed: ${err}`);
+      return 0n;
+    }
+  }
+
+  async getUserYstBalance(userAddress: string): Promise<bigint> {
+    try {
+      if (!this.packageId) return 0n;
+      const coinType = `${this.packageId}::yst::YST`;
+      const bal = await this.client.getBalance({ owner: userAddress, coinType });
+      return BigInt(bal.totalBalance ?? 0);
+    } catch (err) {
+      this.logger.warn(`getUserYstBalance failed for ${userAddress}: ${err}`);
+      return 0n;
+    }
+  }
+
+  async getAdminDexLpShares(): Promise<bigint> {
+    if (!this.onedexObjectId) return 0n;
+    try {
+      const privateKeyB64 = this.config.get<string>('ADMIN_PRIVATE_KEY') ?? '';
+      if (!privateKeyB64) return 0n;
+
+      const keypair = Ed25519Keypair.fromSecretKey(privateKeyB64);
+      const adminAddress = keypair.getPublicKey().toSuiAddress();
+
+      const obj = await this.client.getObject({
+        id: this.onedexObjectId,
+        options: { showContent: true },
+      });
+      const fields = (obj.data?.content as any)?.fields;
+      const tableId = fields?.lp_positions?.fields?.id?.id;
+      if (!tableId) return 0n;
+
+      const dynField = await this.client.getDynamicFieldObject({
+        parentId: tableId,
+        name: { type: 'address', value: adminAddress },
+      });
+      const val = (dynField.data?.content as any)?.fields?.value;
+      return BigInt(val ?? 0);
+    } catch {
+      // 0n means no LP position exists yet — not an error
       return 0n;
     }
   }
