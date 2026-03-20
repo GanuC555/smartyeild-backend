@@ -1,5 +1,6 @@
 import { Model } from 'mongoose';
 import { Position } from '../../common/schemas/position.schema';
+import { MarketSimulatorService } from '../../common/market/market-simulator.service';
 export declare const STRATEGIES: {
     guardian: {
         id: string;
@@ -64,15 +65,16 @@ export declare const STRATEGIES: {
 };
 export declare class StrategyService {
     private positionModel;
-    constructor(positionModel: Model<Position>);
+    private readonly market;
+    constructor(positionModel: Model<Position>, market: MarketSimulatorService);
     getStrategies(): ({
+        currentAPY: number;
         id: string;
         name: string;
         emoji: string;
         riskLevel: number;
         targetAPYMin: number;
         targetAPYMax: number;
-        currentAPY: number;
         description: string;
         protocols: {
             name: string;
@@ -85,13 +87,13 @@ export declare class StrategyService {
         minIdlePercent: number;
         rebalanceInterval: number;
     } | {
+        currentAPY: number;
         id: string;
         name: string;
         emoji: string;
         riskLevel: number;
         targetAPYMin: number;
         targetAPYMax: number;
-        currentAPY: number;
         description: string;
         protocols: {
             name: string;
@@ -104,13 +106,13 @@ export declare class StrategyService {
         minIdlePercent: number;
         rebalanceInterval: number;
     } | {
+        currentAPY: number;
         id: string;
         name: string;
         emoji: string;
         riskLevel: number;
         targetAPYMin: number;
         targetAPYMax: number;
-        currentAPY: number;
         description: string;
         protocols: {
             name: string;

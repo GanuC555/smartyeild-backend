@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Position } from '../../common/schemas/position.schema';
+import { MarketSimulatorService } from '../../common/market/market-simulator.service';
 
 export const STRATEGIES = {
   guardian: {
@@ -111,14 +112,31 @@ export const STRATEGIES = {
 export class StrategyService {
   constructor(
     @InjectModel(Position.name) private positionModel: Model<Position>,
+    private readonly market: MarketSimulatorService,
   ) {}
 
   getStrategies() {
-    return Object.values(STRATEGIES);
+    const mkt = this.market.getState();
+    return Object.values(STRATEGIES).map((s) => ({
+      ...s,
+      currentAPY:
+        s.id === 'guardian' ? mkt.guardianAPY :
+        s.id === 'balancer' ? mkt.balancerAPY :
+        mkt.hunterAPY,
+    }));
   }
 
   getStrategy(id: string) {
-    return STRATEGIES[id] || null;
+    const s = STRATEGIES[id];
+    if (!s) return null;
+    const mkt = this.market.getState();
+    return {
+      ...s,
+      currentAPY:
+        id === 'guardian' ? mkt.guardianAPY :
+        id === 'balancer' ? mkt.balancerAPY :
+        mkt.hunterAPY,
+    };
   }
 
   async allocate(
@@ -188,11 +206,12 @@ export class StrategyService {
     balancer: number;
     hunter: number;
   }) {
+    const mkt = this.market.getState();
     return parseFloat(
       (
-        (alloc.guardian / 100) * STRATEGIES.guardian.currentAPY +
-        (alloc.balancer / 100) * STRATEGIES.balancer.currentAPY +
-        (alloc.hunter / 100) * STRATEGIES.hunter.currentAPY
+        (alloc.guardian / 100) * mkt.guardianAPY +
+        (alloc.balancer / 100) * mkt.balancerAPY +
+        (alloc.hunter / 100) * mkt.hunterAPY
       ).toFixed(2),
     );
   }

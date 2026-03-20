@@ -13,6 +13,7 @@ const strategy_controller_1 = require("./strategy.controller");
 const strategy_service_1 = require("./strategy.service");
 const position_schema_1 = require("../../common/schemas/position.schema");
 const auth_module_1 = require("../auth/auth.module");
+const market_simulator_module_1 = require("../../common/market/market-simulator.module");
 let StrategyModule = class StrategyModule {
 };
 exports.StrategyModule = StrategyModule;
@@ -21,6 +22,7 @@ exports.StrategyModule = StrategyModule = __decorate([
         imports: [
             mongoose_1.MongooseModule.forFeature([{ name: position_schema_1.Position.name, schema: position_schema_1.PositionSchema }]),
             auth_module_1.AuthModule,
+            market_simulator_module_1.MarketSimulatorModule,
         ],
         controllers: [strategy_controller_1.StrategyController],
         providers: [strategy_service_1.StrategyService],

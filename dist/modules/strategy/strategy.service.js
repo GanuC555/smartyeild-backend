@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const position_schema_1 = require("../../common/schemas/position.schema");
+const market_simulator_service_1 = require("../../common/market/market-simulator.service");
 exports.STRATEGIES = {
     guardian: {
         id: 'guardian',
@@ -115,14 +116,30 @@ exports.STRATEGIES = {
     },
 };
 let StrategyService = class StrategyService {
-    constructor(positionModel) {
+    constructor(positionModel, market) {
         this.positionModel = positionModel;
+        this.market = market;
     }
     getStrategies() {
-        return Object.values(exports.STRATEGIES);
+        const mkt = this.market.getState();
+        return Object.values(exports.STRATEGIES).map((s) => ({
+            ...s,
+            currentAPY: s.id === 'guardian' ? mkt.guardianAPY :
+                s.id === 'balancer' ? mkt.balancerAPY :
+                    mkt.hunterAPY,
+        }));
     }
     getStrategy(id) {
-        return exports.STRATEGIES[id] || null;
+        const s = exports.STRATEGIES[id];
+        if (!s)
+            return null;
+        const mkt = this.market.getState();
+        return {
+            ...s,
+            currentAPY: id === 'guardian' ? mkt.guardianAPY :
+                id === 'balancer' ? mkt.balancerAPY :
+                    mkt.hunterAPY,
+        };
     }
     async allocate(userId, allocation) {
         const total = (allocation.guardian || 0) +
@@ -172,9 +189,10 @@ let StrategyService = class StrategyService {
         };
     }
     calculateBlendedAPY(alloc) {
-        return parseFloat(((alloc.guardian / 100) * exports.STRATEGIES.guardian.currentAPY +
-            (alloc.balancer / 100) * exports.STRATEGIES.balancer.currentAPY +
-            (alloc.hunter / 100) * exports.STRATEGIES.hunter.currentAPY).toFixed(2));
+        const mkt = this.market.getState();
+        return parseFloat(((alloc.guardian / 100) * mkt.guardianAPY +
+            (alloc.balancer / 100) * mkt.balancerAPY +
+            (alloc.hunter / 100) * mkt.hunterAPY).toFixed(2));
     }
     isWhitelisted(strategyId, address) {
         return (exports.STRATEGIES[strategyId]?.whitelistedAddresses.includes(address) ?? false);
@@ -184,6 +202,7 @@ exports.StrategyService = StrategyService;
 exports.StrategyService = StrategyService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(position_schema_1.Position.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model])
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        market_simulator_service_1.MarketSimulatorService])
 ], StrategyService);
 //# sourceMappingURL=strategy.service.js.map

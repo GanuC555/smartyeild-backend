@@ -3,13 +3,13 @@ export declare class StrategyController {
     private strategyService;
     constructor(strategyService: StrategyService);
     getStrategies(): ({
+        currentAPY: number;
         id: string;
         name: string;
         emoji: string;
         riskLevel: number;
         targetAPYMin: number;
         targetAPYMax: number;
-        currentAPY: number;
         description: string;
         protocols: {
             name: string;
@@ -22,13 +22,13 @@ export declare class StrategyController {
         minIdlePercent: number;
         rebalanceInterval: number;
     } | {
+        currentAPY: number;
         id: string;
         name: string;
         emoji: string;
         riskLevel: number;
         targetAPYMin: number;
         targetAPYMax: number;
-        currentAPY: number;
         description: string;
         protocols: {
             name: string;
@@ -41,13 +41,13 @@ export declare class StrategyController {
         minIdlePercent: number;
         rebalanceInterval: number;
     } | {
+        currentAPY: number;
         id: string;
         name: string;
         emoji: string;
         riskLevel: number;
         targetAPYMin: number;
         targetAPYMax: number;
-        currentAPY: number;
         description: string;
         protocols: {
             name: string;
