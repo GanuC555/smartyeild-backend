@@ -51,8 +51,12 @@ export class YieldHarvestService implements OnModuleInit {
     try {
       await this.ensureAdminLpPosition();
       const feeAmount = this.computeFeeSlice();
-      await this.injectFees(feeAmount);
-      await this.harvest();
+      const injected = await this.injectFees(feeAmount);
+      if (injected) {
+        await this.harvest();
+      } else {
+        this.logger.warn(`[harvest-cycle] Skipping harvest — fee injection failed (will retry next cycle)`);
+      }
     } catch (err) {
       this.logger.error(`[harvest-cycle] Uncaught error: ${err}`);
     }
@@ -122,14 +126,15 @@ export class YieldHarvestService implements OnModuleInit {
     return Math.max(slice, 0.001);
   }
 
-  private async injectFees(amountUsd: number) {
+  private async injectFees(amountUsd: number): Promise<boolean> {
     this.logger.log(`[harvest] Injecting ${amountUsd.toFixed(6)} USD fees into OneDex fee_pool`);
     const result = await this.oneChainService.simulateTradingFees(amountUsd);
     if (!result.success) {
       this.logger.warn(`[harvest] simulateTradingFees failed: ${result.message}`);
-    } else {
-      this.logger.log(`[harvest] Fee injection SUCCESS — digest: ${result.digest}`);
+      return false;
     }
+    this.logger.log(`[harvest] Fee injection SUCCESS — digest: ${result.digest}`);
+    return true;
   }
 
   private async harvest() {

@@ -55,11 +55,24 @@ let TelegramService = class TelegramService {
             this.bot.api.raw.setChatMenuButton({
                 menu_button: { type: 'web_app', text: '📊 Open App', web_app: { url: frontendUrl } },
             }).catch((e) => this.logger.warn(`Could not set menu button: ${e.message}`));
-            this.bot.start();
+            void this.bot.start().catch((err) => {
+                const description = err?.description ?? err?.message ?? String(err);
+                if (err?.error_code === 409 || /terminated by other getUpdates request/i.test(description)) {
+                    this.logger.error('Telegram polling conflict (409): another instance is already running with the same bot token. Stopping local bot polling.');
+                    return;
+                }
+                this.logger.error(`Telegram bot start failed: ${description}`);
+            });
             this.logger.log(`Telegram Mini App bot started (LLM: ${this.llm.provider}/${this.llm.model})`);
         }
         catch (err) {
             this.logger.error('Telegram bot failed to start', err);
+        }
+    }
+    onModuleDestroy() {
+        if (this.bot) {
+            this.bot.stop();
+            this.logger.log('Telegram bot polling stopped');
         }
     }
     setupHandlers() {

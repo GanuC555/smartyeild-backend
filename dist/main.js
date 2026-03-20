@@ -8,16 +8,28 @@ dotenv.config();
 const app_module_1 = require("./app.module");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
-    const allowedOrigins = [
+    const defaultOrigins = [
         'http://localhost:3000',
         'https://localhost:3000',
         'http://localhost:3001',
         'https://localhost:3001',
         'https://smartyeild-frontend.vercel.app',
-    ].filter(Boolean);
+    ];
+    const extraOrigins = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+        : [];
+    const allowedOrigins = [...new Set([...defaultOrigins, ...extraOrigins])];
     app.enableCors({
-        origin: allowedOrigins,
+        origin: (origin, callback) => {
+            if (!origin)
+                return callback(null, true);
+            if (allowedOrigins.includes(origin))
+                return callback(null, true);
+            callback(new Error(`CORS: origin ${origin} not allowed`));
+        },
         credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Preflight', 'X-Requested-With', 'Accept'],
     });
     app.useGlobalPipes(new common_1.ValidationPipe({ transform: true, whitelist: true }));
     const port = process.env.PORT || 3001;

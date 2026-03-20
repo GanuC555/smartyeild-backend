@@ -352,68 +352,80 @@ export class OneChainService {
    * amountUsd = computed by caller (APY × time × LP value).
    */
   async simulateTradingFees(amountUsd: number): Promise<{ success: boolean; digest?: string; message: string }> {
-    try {
-      const privateKeyB64 = this.config.get<string>('ADMIN_PRIVATE_KEY') ?? '';
-      const onedexId = this.config.get<string>('ONECHAIN_ONEDEX_OBJECT_ID') ?? '';
-      const dexAdminCapId = this.config.get<string>('DEX_ADMIN_CAP_ID') ?? '';
-      const packageId = this.config.get<string>('ONECHAIN_PACKAGE_ID') ?? '';
-      const rpcUrl = this.config.get<string>('ONECHAIN_RPC_URL') ?? 'https://rpc-testnet.onelabs.cc';
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const privateKeyB64 = this.config.get<string>('ADMIN_PRIVATE_KEY') ?? '';
+        const onedexId = this.config.get<string>('ONECHAIN_ONEDEX_OBJECT_ID') ?? '';
+        const dexAdminCapId = this.config.get<string>('DEX_ADMIN_CAP_ID') ?? '';
+        const packageId = this.config.get<string>('ONECHAIN_PACKAGE_ID') ?? '';
+        const rpcUrl = this.config.get<string>('ONECHAIN_RPC_URL') ?? 'https://rpc-testnet.onelabs.cc';
 
-      if (!privateKeyB64 || !onedexId || !dexAdminCapId || !packageId) {
-        return { success: false, message: 'simulateTradingFees: missing env config' };
+        if (!privateKeyB64 || !onedexId || !dexAdminCapId || !packageId) {
+          return { success: false, message: 'simulateTradingFees: missing env config' };
+        }
+
+        const amountBaseUnits = Math.round(amountUsd * MOCK_USD_DECIMALS);
+        if (amountBaseUnits <= 0) {
+          return { success: false, message: 'simulateTradingFees: amount rounds to zero — skipping' };
+        }
+
+        const keypair = Ed25519Keypair.fromSecretKey(privateKeyB64);
+        const client = new SuiClient({ url: rpcUrl });
+        const adminAddress = keypair.getPublicKey().toSuiAddress();
+        const coinType = `${packageId}::mock_usd::MOCK_USD`;
+
+        // Fresh coin fetch on every attempt — avoids stale object version from concurrent txs
+        const coinsResult = await client.getCoins({ owner: adminAddress, coinType });
+        const coins = coinsResult.data;
+        if (!coins || coins.length === 0) {
+          return { success: false, message: 'simulateTradingFees: admin has no MOCK_USD' };
+        }
+
+        const tx = new Transaction();
+        tx.setGasBudget(20_000_000);
+
+        let feesCoin: any;
+        if (coins.length === 1) {
+          [feesCoin] = tx.splitCoins(tx.object(coins[0].coinObjectId), [tx.pure.u64(amountBaseUnits)]);
+        } else {
+          const primary = tx.object(coins[0].coinObjectId);
+          tx.mergeCoins(primary, coins.slice(1).map((c) => tx.object(c.coinObjectId)));
+          [feesCoin] = tx.splitCoins(primary, [tx.pure.u64(amountBaseUnits)]);
+        }
+
+        tx.moveCall({
+          target: `${packageId}::mock_onedex::simulate_trading_fees`,
+          arguments: [tx.object(onedexId), feesCoin, tx.object(dexAdminCapId)],
+        });
+
+        const result = await client.signAndExecuteTransaction({
+          transaction: tx,
+          signer: keypair,
+          options: { showEffects: true },
+        });
+
+        if (result.effects?.status?.status !== 'success') {
+          const err = result.effects?.status?.error ?? 'Unknown error';
+          this.logger.error(`simulateTradingFees failed: ${err}`);
+          return { success: false, message: `simulateTradingFees failed: ${err}` };
+        }
+
+        this.logger.log(`simulateTradingFees: injected ${amountUsd} USD fees — digest: ${result.digest}`);
+        return { success: true, digest: result.digest, message: `Injected ${amountUsd} USD into OneDex fee_pool` };
+      } catch (err) {
+        const msg = String(err);
+        const isStaleObject = msg.includes('not available for consumption') || msg.includes('ObjectVersionUnavailableForConsumption');
+        if (isStaleObject && attempt < MAX_RETRIES) {
+          this.logger.warn(`simulateTradingFees stale object (attempt ${attempt}/${MAX_RETRIES}), retrying...`);
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+        this.logger.error(`simulateTradingFees error: ${err}`);
+        return { success: false, message: `simulateTradingFees error: ${msg}` };
       }
-
-      const amountBaseUnits = Math.round(amountUsd * MOCK_USD_DECIMALS);
-      if (amountBaseUnits <= 0) {
-        return { success: false, message: 'simulateTradingFees: amount rounds to zero — skipping' };
-      }
-
-      const keypair = Ed25519Keypair.fromSecretKey(privateKeyB64);
-      const client = new SuiClient({ url: rpcUrl });
-      const adminAddress = keypair.getPublicKey().toSuiAddress();
-      const coinType = `${packageId}::mock_usd::MOCK_USD`;
-
-      const coinsResult = await client.getCoins({ owner: adminAddress, coinType });
-      const coins = coinsResult.data;
-      if (!coins || coins.length === 0) {
-        return { success: false, message: 'simulateTradingFees: admin has no MOCK_USD' };
-      }
-
-      const tx = new Transaction();
-      tx.setGasBudget(20_000_000);
-
-      let feesCoin: any;
-      if (coins.length === 1) {
-        [feesCoin] = tx.splitCoins(tx.object(coins[0].coinObjectId), [tx.pure.u64(amountBaseUnits)]);
-      } else {
-        const primary = tx.object(coins[0].coinObjectId);
-        tx.mergeCoins(primary, coins.slice(1).map((c) => tx.object(c.coinObjectId)));
-        [feesCoin] = tx.splitCoins(primary, [tx.pure.u64(amountBaseUnits)]);
-      }
-
-      tx.moveCall({
-        target: `${packageId}::mock_onedex::simulate_trading_fees`,
-        arguments: [tx.object(onedexId), feesCoin, tx.object(dexAdminCapId)],
-      });
-
-      const result = await client.signAndExecuteTransaction({
-        transaction: tx,
-        signer: keypair,
-        options: { showEffects: true },
-      });
-
-      if (result.effects?.status?.status !== 'success') {
-        const err = result.effects?.status?.error ?? 'Unknown error';
-        this.logger.error(`simulateTradingFees failed: ${err}`);
-        return { success: false, message: `simulateTradingFees failed: ${err}` };
-      }
-
-      this.logger.log(`simulateTradingFees: injected ${amountUsd} USD fees — digest: ${result.digest}`);
-      return { success: true, digest: result.digest, message: `Injected ${amountUsd} USD into OneDex fee_pool` };
-    } catch (err) {
-      this.logger.error(`simulateTradingFees error: ${err}`);
-      return { success: false, message: `simulateTradingFees error: ${String(err)}` };
     }
+    return { success: false, message: 'simulateTradingFees: all retries exhausted' };
   }
 
   /**

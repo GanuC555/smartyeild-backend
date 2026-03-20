@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from '../../common/schemas/user.schema';
@@ -18,7 +18,7 @@ const h = (s: string | number) =>
 const MAX_HISTORY = 10; // turns to keep per user
 
 @Injectable()
-export class TelegramService implements OnModuleInit {
+export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('TelegramService');
   private bot: any = null;
 
@@ -56,10 +56,26 @@ export class TelegramService implements OnModuleInit {
         menu_button: { type: 'web_app', text: '📊 Open App', web_app: { url: frontendUrl } },
       }).catch((e: any) => this.logger.warn(`Could not set menu button: ${e.message}`));
 
-      this.bot.start();
+      void this.bot.start().catch((err: any) => {
+        const description = err?.description ?? err?.message ?? String(err);
+        if (err?.error_code === 409 || /terminated by other getUpdates request/i.test(description)) {
+          this.logger.error(
+            'Telegram polling conflict (409): another instance is already running with the same bot token. Stopping local bot polling.',
+          );
+          return;
+        }
+        this.logger.error(`Telegram bot start failed: ${description}`);
+      });
       this.logger.log(`Telegram Mini App bot started (LLM: ${this.llm.provider}/${this.llm.model})`);
     } catch (err) {
       this.logger.error('Telegram bot failed to start', err);
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.bot) {
+      this.bot.stop();
+      this.logger.log('Telegram bot polling stopped');
     }
   }
 

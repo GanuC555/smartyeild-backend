@@ -1,4 +1,4 @@
-import { OnModuleInit } from '@nestjs/common';
+import { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Model } from 'mongoose';
 import { User } from '../../common/schemas/user.schema';
 import { Position } from '../../common/schemas/position.schema';
@@ -6,7 +6,7 @@ import { AgentDecision } from '../../common/schemas/agent-decision.schema';
 import { LanePosition } from '../../common/schemas/lane-position.schema';
 import { MarketSimulatorService } from '../../common/market/market-simulator.service';
 import { LLMAdapter } from '../../common/llm/llm.adapter';
-export declare class TelegramService implements OnModuleInit {
+export declare class TelegramService implements OnModuleInit, OnModuleDestroy {
     private userModel;
     private positionModel;
     private decisionModel;
@@ -18,6 +18,7 @@ export declare class TelegramService implements OnModuleInit {
     private readonly history;
     constructor(userModel: Model<User>, positionModel: Model<Position>, decisionModel: Model<AgentDecision>, lanePositionModel: Model<LanePosition>, market: MarketSimulatorService, llm: LLMAdapter);
     onModuleInit(): Promise<void>;
+    onModuleDestroy(): void;
     private setupHandlers;
     private chatFull;
     private buildSystemPrompt;

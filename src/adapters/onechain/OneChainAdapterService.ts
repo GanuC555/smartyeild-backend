@@ -137,8 +137,9 @@ export class OneChainAdapterService implements IOneChainAdapter, OnModuleInit {
         options: { showContent: true },
       });
       const fields = (obj.data?.content as any)?.fields;
-      // yield_reserve is a Balance<MOCK_USD> stored as { fields: { value: "..." } }
-      const raw = fields?.yield_reserve?.fields?.value ?? '0';
+      // yield_reserve is a Balance<MOCK_USD> — OneChain SDK returns it as a plain string
+      const yr = fields?.yield_reserve;
+      const raw = (typeof yr === 'object' ? yr?.fields?.value : yr) ?? '0';
       return BigInt(raw);
     } catch (err) {
       this.logger.warn(`getVaultYieldReserve failed: ${err}`);
