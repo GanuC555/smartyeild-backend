@@ -8,6 +8,7 @@ import { Transaction } from '../../common/schemas/transaction.schema';
 import { LanePosition, LanePositionDocument } from '../../common/schemas/lane-position.schema';
 import { ChainAdapterFactory } from '../../adapters/chain/chain-adapter.factory';
 import { OneChainAdapterService } from '../../adapters/onechain/OneChainAdapterService';
+import { MarketSimulatorService } from '../../common/market/market-simulator.service';
 
 const VAULT = {
   id: 'vault-main',
@@ -31,6 +32,7 @@ export class VaultService {
     @InjectQueue('tx-watcher') private txWatcherQueue: Queue,
     private chainAdapterFactory: ChainAdapterFactory,
     private readonly oneChainAdapter: OneChainAdapterService,
+    private readonly market: MarketSimulatorService,
   ) {
     this.chainAdapter = this.chainAdapterFactory.create();
   }
@@ -45,10 +47,15 @@ export class VaultService {
       this.logger.warn(`getVaults: on-chain TVL read failed — returning 0: ${err}`);
     }
 
+    const mkt = this.market.getState();
+    const platformAPY = parseFloat(
+      ((mkt.guardianAPY + mkt.balancerAPY + mkt.hunterAPY) / 3).toFixed(2),
+    );
+
     return [
       {
         ...VAULT,
-        apy: 12.5,
+        apy: platformAPY,
         tvl: tvlUsd,
         sharePrice: '1.000000',
         status: 'active',
@@ -58,7 +65,11 @@ export class VaultService {
 
   async getVault(id: string) {
     const state = await this.chainAdapter.getVaultState();
-    return { ...VAULT, ...state, id, status: 'active' };
+    const mkt = this.market.getState();
+    const platformAPY = parseFloat(
+      ((mkt.guardianAPY + mkt.balancerAPY + mkt.hunterAPY) / 3).toFixed(2),
+    );
+    return { ...VAULT, ...state, id, status: 'active', apy: platformAPY };
   }
 
   async previewDeposit(amount: string) {

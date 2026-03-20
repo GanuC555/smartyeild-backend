@@ -19,6 +19,7 @@ const transaction_schema_1 = require("../../common/schemas/transaction.schema");
 const lane_position_schema_1 = require("../../common/schemas/lane-position.schema");
 const auth_module_1 = require("../auth/auth.module");
 const onechain_module_1 = require("../onechain/onechain.module");
+const market_simulator_module_1 = require("../../common/market/market-simulator.module");
 let VaultModule = class VaultModule {
 };
 exports.VaultModule = VaultModule;
@@ -33,6 +34,7 @@ exports.VaultModule = VaultModule = __decorate([
             bull_1.BullModule.registerQueue({ name: 'tx-watcher' }),
             auth_module_1.AuthModule,
             onechain_module_1.OneChainModule,
+            market_simulator_module_1.MarketSimulatorModule,
         ],
         controllers: [vault_controller_1.VaultController],
         providers: [vault_service_1.VaultService, tx_watcher_processor_1.TxWatcherProcessor, chain_adapter_factory_1.ChainAdapterFactory],

@@ -22,6 +22,7 @@ const transaction_schema_1 = require("../../common/schemas/transaction.schema");
 const lane_position_schema_1 = require("../../common/schemas/lane-position.schema");
 const chain_adapter_factory_1 = require("../../adapters/chain/chain-adapter.factory");
 const OneChainAdapterService_1 = require("../../adapters/onechain/OneChainAdapterService");
+const market_simulator_service_1 = require("../../common/market/market-simulator.service");
 const VAULT = {
     id: 'vault-main',
     name: 'OneYield Vault',
@@ -31,13 +32,14 @@ const VAULT = {
     minDeposit: '10',
 };
 let VaultService = class VaultService {
-    constructor(positionModel, transactionModel, lanePositionModel, txWatcherQueue, chainAdapterFactory, oneChainAdapter) {
+    constructor(positionModel, transactionModel, lanePositionModel, txWatcherQueue, chainAdapterFactory, oneChainAdapter, market) {
         this.positionModel = positionModel;
         this.transactionModel = transactionModel;
         this.lanePositionModel = lanePositionModel;
         this.txWatcherQueue = txWatcherQueue;
         this.chainAdapterFactory = chainAdapterFactory;
         this.oneChainAdapter = oneChainAdapter;
+        this.market = market;
         this.logger = new common_1.Logger('VaultService');
         this.chainAdapter = this.chainAdapterFactory.create();
     }
@@ -50,10 +52,12 @@ let VaultService = class VaultService {
         catch (err) {
             this.logger.warn(`getVaults: on-chain TVL read failed — returning 0: ${err}`);
         }
+        const mkt = this.market.getState();
+        const platformAPY = parseFloat(((mkt.guardianAPY + mkt.balancerAPY + mkt.hunterAPY) / 3).toFixed(2));
         return [
             {
                 ...VAULT,
-                apy: 12.5,
+                apy: platformAPY,
                 tvl: tvlUsd,
                 sharePrice: '1.000000',
                 status: 'active',
@@ -62,7 +66,9 @@ let VaultService = class VaultService {
     }
     async getVault(id) {
         const state = await this.chainAdapter.getVaultState();
-        return { ...VAULT, ...state, id, status: 'active' };
+        const mkt = this.market.getState();
+        const platformAPY = parseFloat(((mkt.guardianAPY + mkt.balancerAPY + mkt.hunterAPY) / 3).toFixed(2));
+        return { ...VAULT, ...state, id, status: 'active', apy: platformAPY };
     }
     async previewDeposit(amount) {
         return this.chainAdapter.previewDeposit(amount);
@@ -157,6 +163,7 @@ exports.VaultService = VaultService = __decorate([
     __metadata("design:paramtypes", [mongoose_2.Model,
         mongoose_2.Model,
         mongoose_2.Model, Object, chain_adapter_factory_1.ChainAdapterFactory,
-        OneChainAdapterService_1.OneChainAdapterService])
+        OneChainAdapterService_1.OneChainAdapterService,
+        market_simulator_service_1.MarketSimulatorService])
 ], VaultService);
 //# sourceMappingURL=vault.service.js.map

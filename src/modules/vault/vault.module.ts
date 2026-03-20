@@ -10,6 +10,7 @@ import { Transaction, TransactionSchema } from '../../common/schemas/transaction
 import { LanePosition, LanePositionSchema } from '../../common/schemas/lane-position.schema';
 import { AuthModule } from '../auth/auth.module';
 import { OneChainModule } from '../onechain/onechain.module';
+import { MarketSimulatorModule } from '../../common/market/market-simulator.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { OneChainModule } from '../onechain/onechain.module';
     BullModule.registerQueue({ name: 'tx-watcher' }),
     AuthModule,
     OneChainModule,
+    MarketSimulatorModule,
   ],
   controllers: [VaultController],
   providers: [VaultService, TxWatcherProcessor, ChainAdapterFactory],

@@ -5,6 +5,7 @@ import { Transaction } from '../../common/schemas/transaction.schema';
 import { LanePositionDocument } from '../../common/schemas/lane-position.schema';
 import { ChainAdapterFactory } from '../../adapters/chain/chain-adapter.factory';
 import { OneChainAdapterService } from '../../adapters/onechain/OneChainAdapterService';
+import { MarketSimulatorService } from '../../common/market/market-simulator.service';
 export declare class VaultService {
     private positionModel;
     private transactionModel;
@@ -12,9 +13,10 @@ export declare class VaultService {
     private txWatcherQueue;
     private chainAdapterFactory;
     private readonly oneChainAdapter;
+    private readonly market;
     private readonly logger;
     private chainAdapter;
-    constructor(positionModel: Model<Position>, transactionModel: Model<Transaction>, lanePositionModel: Model<LanePositionDocument>, txWatcherQueue: Queue, chainAdapterFactory: ChainAdapterFactory, oneChainAdapter: OneChainAdapterService);
+    constructor(positionModel: Model<Position>, transactionModel: Model<Transaction>, lanePositionModel: Model<LanePositionDocument>, txWatcherQueue: Queue, chainAdapterFactory: ChainAdapterFactory, oneChainAdapter: OneChainAdapterService, market: MarketSimulatorService);
     getVaults(): Promise<{
         apy: number;
         tvl: string;
