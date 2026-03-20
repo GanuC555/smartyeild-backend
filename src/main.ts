@@ -10,7 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const defaultOrigins = [
-    'http://localhost:3000',
+    'http://localhost:3000/',
     'https://localhost:3000',
     'http://localhost:3001',
     'https://localhost:3001',
