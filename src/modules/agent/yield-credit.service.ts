@@ -23,7 +23,7 @@ import { OneChainService } from '../onechain/onechain.service';
  * No longer reads simulated Position.accruedYield from MongoDB.
  */
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const MIN_CREDIT_USD = 0.001;       // only push to chain when delta >= $0.001
+const MIN_CREDIT_USD = 0.0005;       // only push to chain when delta >= $0.001
 const MOCK_USD_DECIMALS = 1_000_000; // 6 decimal places
 
 @Injectable()
