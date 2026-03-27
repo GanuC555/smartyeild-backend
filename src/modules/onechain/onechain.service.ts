@@ -82,22 +82,65 @@ export class OneChainService {
 
   /**
    * Mint MOCK_USD to a recipient using the admin TreasuryCap.
-   * Requires ADMIN_PRIVATE_KEY and USD_TREASURY_CAP_ID in env.
+   * Best practice: use dedicated faucet signer + treasury cap to avoid lock contention
+   * with background admin jobs.
+   * Env priority:
+   *   1) FAUCET_ADMIN_PRIVATE_KEY + FAUCET_USD_TREASURY_CAP_ID
+   *   2) ADMIN_PRIVATE_KEY + USD_TREASURY_CAP_ID (fallback)
    * Default: 100 USD (100_000_000 base units, 6 decimals).
    */
   async mintUsd(recipient: string): Promise<{ success: boolean; digest?: string; message: string }> {
     try {
-      const privateKeyB64 = this.config.get<string>('ADMIN_PRIVATE_KEY') ?? '';
-      const treasuryCapId = this.config.get<string>('USD_TREASURY_CAP_ID') ?? '';
+      const privateKeyB64 =
+        this.config.get<string>('FAUCET_ADMIN_PRIVATE_KEY') ??
+        this.config.get<string>('ADMIN_PRIVATE_KEY') ??
+        '';
+      const treasuryCapId =
+        this.config.get<string>('FAUCET_USD_TREASURY_CAP_ID') ??
+        this.config.get<string>('USD_TREASURY_CAP_ID') ??
+        '';
       const packageId = this.config.get<string>('ONECHAIN_PACKAGE_ID') ?? '';
       const rpcUrl = this.config.get<string>('ONECHAIN_RPC_URL') ?? 'https://rpc-testnet.onelabs.cc';
 
       if (!privateKeyB64 || !treasuryCapId || !packageId) {
-        return { success: false, message: 'Faucet not configured (ADMIN_PRIVATE_KEY or USD_TREASURY_CAP_ID missing)' };
+        return {
+          success: false,
+          message:
+            'Faucet not configured (set FAUCET_ADMIN_PRIVATE_KEY + FAUCET_USD_TREASURY_CAP_ID, or fallback ADMIN_PRIVATE_KEY + USD_TREASURY_CAP_ID)',
+        };
       }
 
       const keypair = Ed25519Keypair.fromSecretKey(privateKeyB64);
       const client = new SuiClient({ url: rpcUrl });
+      const signerAddress = keypair.getPublicKey().toSuiAddress();
+
+      // Preflight 1: signer must have enough OCT gas
+      const octBalance = await client.getBalance({ owner: signerAddress, coinType: '0x2::oct::OCT' });
+      const octRaw = BigInt(octBalance.totalBalance ?? 0);
+      if (octRaw < 50_000_000n) {
+        // 0.05 OCT safety floor for stable faucet UX
+        return {
+          success: false,
+          message: `Faucet signer has low OCT gas (${(Number(octRaw) / 1_000_000_000).toFixed(6)} OCT). Top up faucet wallet gas and retry.`,
+        };
+      }
+
+      // Preflight 2: treasury cap ownership should match signer
+      const capObj = await client.getObject({
+        id: treasuryCapId,
+        options: { showOwner: true },
+      });
+
+      const owner = (capObj as any)?.data?.owner;
+      const ownerAddress: string | null = owner?.AddressOwner ?? null;
+      if (ownerAddress && ownerAddress.toLowerCase() !== signerAddress.toLowerCase()) {
+        return {
+          success: false,
+          message:
+            `Faucet treasury cap is owned by ${ownerAddress}, but faucet signer is ${signerAddress}. ` +
+            'Use matching key/cap pair (recommended: FAUCET_ADMIN_PRIVATE_KEY + FAUCET_USD_TREASURY_CAP_ID).',
+        };
+      }
 
       const tx = new Transaction();
       tx.setGasBudget(20_000_000);
@@ -415,9 +458,18 @@ export class OneChainService {
         return { success: true, digest: result.digest, message: `Injected ${amountUsd} USD into OneDex fee_pool` };
       } catch (err) {
         const msg = String(err);
-        const isStaleObject = msg.includes('not available for consumption') || msg.includes('ObjectVersionUnavailableForConsumption');
-        if (isStaleObject && attempt < MAX_RETRIES) {
-          this.logger.warn(`simulateTradingFees stale object (attempt ${attempt}/${MAX_RETRIES}), retrying...`);
+        const isStaleObject =
+          msg.includes('not available for consumption') ||
+          msg.includes('ObjectVersionUnavailableForConsumption');
+        const isCoinLockContention =
+          msg.includes('already locked by a different transaction') ||
+          msg.includes('Transaction is rejected as invalid by more than 1/3 of validators');
+
+        if ((isStaleObject || isCoinLockContention) && attempt < MAX_RETRIES) {
+          const reason = isCoinLockContention ? 'gas coin lock contention' : 'stale object';
+          this.logger.warn(
+            `simulateTradingFees ${reason} (attempt ${attempt}/${MAX_RETRIES}), retrying...`,
+          );
           await new Promise((r) => setTimeout(r, 1000 * attempt));
           continue;
         }
